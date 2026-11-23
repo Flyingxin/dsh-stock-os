@@ -1,0 +1,5 @@
+- insert:
+    - id: stock-os
+      name: '@local/stock-os'
+      config:
+        dataDir: 'E:\DeepSeek Harness\workplace\财报\.stock-os'

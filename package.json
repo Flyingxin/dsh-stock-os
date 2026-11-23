@@ -1,0 +1,25 @@
+{
+  "name": "@local/stock-os",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Investment decision ledger: written rules before trades, one record per action",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "playbooks",
+    "locale/*.json",
+    "docs",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
