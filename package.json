@@ -1,11 +1,32 @@
 {
-  "name": "@local/stock-os",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Investment decision ledger: written rules before trades, one record per action",
+  "name": "dsh-stock-os",
+  "version": "0.2.0",
+  "description": "Investment decision ledger for DeepSeek Harness: written rules before trades, one record per action.",
   "type": "module",
+  "main": "index.js",
+  "icon": "./icon.svg",
+  "license": "MIT",
+  "author": "Flyingxin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Flyingxin/dsh-stock-os.git"
+  },
+  "homepage": "https://github.com/Flyingxin/dsh-stock-os#readme",
+  "bugs": {
+    "url": "https://github.com/Flyingxin/dsh-stock-os/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-bundle",
+    "deepseek-harness",
+    "investment",
+    "stock",
+    "checklist"
+  ],
   "exports": {
     ".": "./index.js",
+    "./index.js": "./index.js",
+    "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
   },
@@ -13,10 +34,15 @@
     "index.js",
     "cordis.patch.yml",
     "playbooks",
-    "locale/*.json",
+    "locale",
     "docs",
-    "icon.svg"
+    "icon.svg",
+    "README.md",
+    "LICENSE"
   ],
+  "engines": {
+    "node": ">=18"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

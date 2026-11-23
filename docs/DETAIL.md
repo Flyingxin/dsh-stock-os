@@ -33,7 +33,7 @@ stock_os action=trade symbol=600519.SH trade=open qty=100 price=1500 reason="...
 
 ## 数据位置
 
-默认 `<工作目录>/.stock-os/`：
+默认 `~/.stock-os/`：
 
 - `SYMBOL.json`：每只股票的档案（结论、宪法、仓位、回撤预案）
 - `journal.jsonl`：只追加的流水，一行一个 JSON

@@ -1,5 +1,18 @@
+# stock-os bundle entry.
+#
+# `name` must stay in sync with package.json: the loader resolves the module by
+# this string, so renaming the package means renaming this line too.
+#
+# `config` is intentionally empty here. Leaving `dataDir` unset stores dossiers
+# under ~/.stock-os, which is what a fresh install should do. To point a single
+# machine at another folder, override it in the *profile* patch layer instead of
+# editing this file — otherwise the repo hard-codes one user's absolute path:
+#
+#   - id: stock-os
+#     name: dsh-stock-os
+#     config:
+#       dataDir: 'D:\my-data\stock-os'
 - insert:
     - id: stock-os
-      name: '@local/stock-os'
-      config:
-        dataDir: 'E:\DeepSeek Harness\workplace\财报\.stock-os'
+      name: dsh-stock-os
+      config: {}

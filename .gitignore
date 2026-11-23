@@ -1,0 +1,5 @@
+node_modules/
+.stock-os/
+*.log
+.DS_Store
+Thumbs.db
