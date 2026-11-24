@@ -20,6 +20,7 @@ import { registerApi } from './lib/api.js'
 import { checkDataset, readDataset, writeDataset, SERIES_LABEL } from './lib/dataset.js'
 import { emit as emitNotes, loadIndex, parts as noteParts, search as searchNotes } from './lib/notes.js'
 import { buildChartsHtml } from './lib/charts.js'
+import { buildReportHtml, computeChecks } from './lib/report.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const STAGES = ['idea', 'research', 'plan', 'open', 'hold', 'closed']
@@ -41,6 +42,25 @@ const REQUIRED_CONSTITUTION = [
 
 const now = () => new Date().toISOString()
 const round = (v, d = 2) => Math.round(v * 10 ** d) / 10 ** d
+
+/**
+ * Tool results must serialize losslessly: one `undefined` property makes the
+ * whole result unserializable ("value is not lossless JSON"). Drop undefined
+ * entries recursively; undefined array slots become null so positions stay put.
+ */
+function jsonSafe(value) {
+  if (Array.isArray(value)) return value.map(v => (v === undefined ? null : jsonSafe(v)))
+  if (value && typeof value === 'object') {
+    if (value instanceof Date) return value.toISOString()
+    const out = {}
+    for (const [key, v] of Object.entries(value)) {
+      if (v === undefined) continue
+      out[key] = jsonSafe(v)
+    }
+    return out
+  }
+  return value
+}
 
 function dataDir(config) {
   const dir = (config && config.dataDir) || path.join(os.homedir(), '.stock-os')
@@ -107,6 +127,13 @@ async function loadDossier(dir, symbol) {
   return dossier
 }
 
+/** Stamp the originating session, then persist atomically. */
+async function saveDossier(dir, dossier, meta) {
+  stampSession(dossier, meta)
+  dossier.updatedAt = dossier.updatedAt || now()
+  await writeJson(dossierPath(dir, dossier.symbol), dossier)
+}
+
 function summarise(dossier) {
   const p = dossier.position || { qty: 0, avgCost: 0, openedAt: null }
   const c = dossier.constitution || null
@@ -122,8 +149,21 @@ function summarise(dossier) {
     maxPositionPct: c ? c.maxPositionPct : null,
     stopLossPct: c ? c.stopLossPct : null,
     reviewDueAt: (dossier.plans && dossier.plans.reviewDueAt) || null,
+    sessionId: dossier.sessionId || null,
+    sessionAt: dossier.sessionAt || null,
     updatedAt: dossier.updatedAt,
   }
+}
+
+/** 记住"这份档案是在哪个会话里写的"，面板才能一键跳回那个会话。 */
+function stampSession(dossier, meta) {
+  const id = meta && meta.sessionId
+  if (!id) return dossier
+  if (dossier.sessionId !== id) {
+    dossier.sessionId = id
+    dossier.sessionAt = now()
+  }
+  return dossier
 }
 
 /** Structural rules. Anything here blocks the write unless the caller forces it. */
@@ -221,7 +261,7 @@ function nextActions(dossier) {
   return out
 }
 
-async function handle(action, args, dir) {
+async function handle(action, args, dir, meta = {}) {
   switch (action) {
     case 'init': {
       const symbol = normalizeSymbol(args.symbol)
@@ -241,12 +281,19 @@ async function handle(action, args, dir) {
         plans: null,
         notes: args.note || null,
       }
-      await writeJson(dossierPath(dir, symbol), dossier)
+      stampSession(dossier, meta)
+      await saveDossier(dir, dossier, meta)
       await appendJournal(dir, { ts: now(), symbol, action: 'init', stage: 'idea', reason: args.note || '建立档案' })
       return { ok: true, created: true, dossier: summarise(dossier), message: '档案已建立，下一步：买前调研' }
     }
     case 'get': {
       const dossier = await loadDossier(dir, normalizeSymbol(args.symbol))
+      // Reading from a session is enough to link the dossier to that conversation:
+      // the panel's "继续" button then has somewhere to jump back to.
+      if (meta.sessionId && dossier.sessionId !== meta.sessionId) {
+        stampSession(dossier, meta)
+        await writeJson(dossierPath(dir, dossier.symbol), dossier)
+      }
       return {
         ok: true,
         dossier: summarise(dossier),
@@ -293,7 +340,7 @@ async function handle(action, args, dir) {
       // without forcing the caller through a no-op transition.
       if (dossier.stage === 'idea') dossier.stage = 'research'
       dossier.updatedAt = now()
-      await writeJson(dossierPath(dir, dossier.symbol), dossier)
+      await saveDossier(dir, dossier, meta)
       await appendJournal(dir, { ts: now(), symbol: dossier.symbol, action: 'verdict', stage: dossier.stage, status: args.status, reason: args.summary || '' })
       return { ok: true, dossier: summarise(dossier), verdict: dossier.verdict }
     }
@@ -306,7 +353,7 @@ async function handle(action, args, dir) {
       if (!Array.isArray(c.invalidations) || c.invalidations.length === 0) throw new Error('invalidations 至少写一条（什么情况下这笔投资的前提就不成立了）')
       dossier.constitution = { ...dossier.constitution, ...c, at: now() }
       dossier.updatedAt = now()
-      await writeJson(dossierPath(dir, dossier.symbol), dossier)
+      await saveDossier(dir, dossier, meta)
       await appendJournal(dir, { ts: now(), symbol: dossier.symbol, action: 'constitution', stage: dossier.stage, reason: c.addRules || '写入策略宪法' })
       return { ok: true, dossier: summarise(dossier), constitution: dossier.constitution }
     }
@@ -319,7 +366,7 @@ async function handle(action, args, dir) {
         at: now(),
       }
       dossier.updatedAt = now()
-      await writeJson(dossierPath(dir, dossier.symbol), dossier)
+      await saveDossier(dir, dossier, meta)
       await appendJournal(dir, { ts: now(), symbol: dossier.symbol, action: 'plan', stage: dossier.stage, reason: args.drawdownPlan || '' })
       return { ok: true, plans: dossier.plans }
     }
@@ -337,7 +384,7 @@ async function handle(action, args, dir) {
       const from = dossier.stage
       dossier.stage = to
       dossier.updatedAt = now()
-      await writeJson(dossierPath(dir, dossier.symbol), dossier)
+      await saveDossier(dir, dossier, meta)
       await appendJournal(dir, { ts: now(), symbol: dossier.symbol, action: 'stage', from, to, reason: args.reason || '' })
       return { ok: true, from, to, dossier: summarise(dossier), nextActions: nextActions(dossier) }
     }
@@ -354,7 +401,7 @@ async function handle(action, args, dir) {
       const before = { qty: dossier.position.qty, avgCost: dossier.position.avgCost }
       const position = applyTrade(dossier, trade, args)
       dossier.updatedAt = now()
-      await writeJson(dossierPath(dir, symbol), dossier)
+      await saveDossier(dir, dossier, meta)
       await appendJournal(dir, {
         ts: now(),
         symbol,
@@ -377,6 +424,14 @@ async function handle(action, args, dir) {
       const text = args.text == null ? '' : String(args.text).trim()
       if (!text) return { ok: false, message: 'journal 需要 text：流水记的是理由，不是动作本身' }
       const symbol = args.symbol ? normalizeSymbol(args.symbol) : null
+      if (symbol && meta.sessionId) {
+        try {
+          const dossier = await loadDossier(dir, symbol)
+          if (dossier.sessionId !== meta.sessionId) await saveDossier(dir, dossier, meta)
+        } catch {
+          // 没有档案时只记流水
+        }
+      }
       await appendJournal(dir, {
         ts: now(),
         symbol,
@@ -404,12 +459,48 @@ async function handle(action, args, dir) {
       }
       return { ok: violations.length === 0, violations, dossier: summarise(dossier) }
     }
+    case 'delete': {
+      const symbol = normalizeSymbol(args.symbol)
+      const file = dossierPath(dir, symbol)
+      const dossier = await readJson(file, undefined)
+      if (!dossier) throw new Error(`没有 ${symbol} 的档案`)
+      if (dossier.position && dossier.position.qty > 0 && !args.force) {
+        throw new Error(`还有 ${dossier.position.qty} 股持仓，不能删档案。先 trade close，或带 force 并写 overrideReason`)
+      }
+      if (args.force && !args.overrideReason) throw new Error('强制删除档案必须写 overrideReason')
+      const grave = path.join(dir, '_deleted')
+      await fs.mkdir(grave, { recursive: true })
+      const stamp = now().replace(/[:.]/g, '-')
+      const target = path.join(grave, `${symbol}-${stamp}.json`)
+      await fs.rename(file, target)
+      await appendJournal(dir, {
+        ts: now(),
+        symbol,
+        action: 'delete',
+        stage: dossier.stage,
+        reason: args.overrideReason || args.reason || '档案从面板删除（已归档到 _deleted/，流水保留）',
+      })
+      return {
+        ok: true,
+        symbol,
+        archived: target,
+        message: `已删除 ${symbol} 的档案，归档在 ${path.relative(dir, target)}；流水不删。`,
+      }
+    }
+    case 'report': {
+      return handleReport(dir, args)
+    }
     default:
       throw new Error(`未知 action：${action}`)
   }
 }
 
-const ACTION_SCHEMA = { type: 'string', required: true, enum: ['init', 'get', 'list', 'verdict', 'constitution', 'plan', 'stage', 'trade', 'journal', 'guards'], description: '要执行的动作' }
+const ACTION_SCHEMA = {
+  type: 'string',
+  required: true,
+  enum: ['init', 'get', 'list', 'verdict', 'constitution', 'plan', 'stage', 'trade', 'journal', 'guards', 'delete', 'report'],
+  description: '要执行的动作',
+}
 
 export const name = 'stock-os'
 export const inject = ['tools', 'webServer']
@@ -424,7 +515,14 @@ async function handleData(dir, args) {
       return { ok: false, found: false, message: `${symbol} 还没有数据集：先用 stock_data action=set 写入近五年财报数据` }
     }
     const report = checkDataset(dataset)
-    return { ok: report.ok, found: true, dataset: action === 'get' ? dataset : undefined, report, message: report.ok ? `${symbol} 数据完整，可以开始分析` : `${symbol} 数据还不完整：${report.problems.join('；')}` }
+    return jsonSafe({
+      ok: report.ok,
+      found: true,
+      // check 只要报告；get 才回整个数据集。省略而非置 undefined，否则结果无法无损序列化。
+      ...(action === 'get' ? { dataset } : {}),
+      report,
+      message: report.ok ? `${symbol} 数据完整，可以开始分析` : `${symbol} 数据还不完整：${report.problems.join('；')}`,
+    })
   }
   if (action === 'set') {
     if (!symbol) throw new Error('缺少 symbol')
@@ -528,6 +626,65 @@ async function handleCharts(dir, args) {
   }
 }
 
+/** 结论报告：调研阶段的最终产物，只读数据集与档案里已写入的 verdict。 */
+async function handleReport(dir, args) {
+  const symbol = normalizeSymbol(args.symbol)
+  const dossier = await loadDossier(dir, symbol)
+  if (!dossier.verdict) {
+    throw new Error(`${symbol} 还没有买前结论：先完成调研并用 stock_os action=verdict 写入结论，再出报告`)
+  }
+  const dataset = await readDataset(dir, symbol)
+  if (!dataset) {
+    throw new Error(`${symbol} 还没有近五年数据：先 stock_data action=set 写入数据，再出报告`)
+  }
+  const datasetReport = checkDataset(dataset)
+  if (!datasetReport.ok && !args.force) {
+    throw new Error(`数据不完整，先补齐再出报告：${datasetReport.problems.join('；')}（查缺用 stock_data action=check）`)
+  }
+  const checks = computeChecks(dataset)
+  const html = buildReportHtml({
+    dossier,
+    dataset,
+    checks,
+    nextActions: nextActions(dossier),
+  })
+  if (args.action === 'preview') {
+    const failed = checks.filter(c => c.state === 'bad').length
+    return {
+      ok: true,
+      status: dossier.verdict.status,
+      checks,
+      figures: (html.match(/<figure class="chart"/g) || []).length,
+      chars: html.length,
+      message: `可以出报告：结论 ${dossier.verdict.status}，12 项检查里异常 ${failed} 项`,
+    }
+  }
+  const target = args.path
+    ? path.resolve(args.path)
+    : path.join(reportsDir(dir), `${symbol}-report.html`)
+  await fs.mkdir(path.dirname(target), { recursive: true })
+  await fs.writeFile(target, html, 'utf8')
+  await appendJournal(dir, {
+    ts: now(),
+    symbol,
+    action: 'report',
+    stage: dossier.stage,
+    reason: `生成结论报告 ${path.basename(target)}`,
+  })
+  const failed = checks.filter(c => c.state === 'bad').length
+  return {
+    ok: true,
+    path: target,
+    url: `/stock-os/reports/${path.basename(target)}`,
+    bytes: Buffer.byteLength(html, 'utf8'),
+    figures: (html.match(/<figure class="chart"/g) || []).length,
+    status: dossier.verdict.status,
+    checks,
+    failed,
+    message: `结论报告已生成：${target}（结论 ${dossier.verdict.status}，异常 ${failed} 项）`,
+  }
+}
+
 function registerResearchTools(ctx, dir) {
   ctx.tools.register({
     name: 'stock_data',
@@ -570,7 +727,7 @@ function registerResearchTools(ctx, dir) {
         return [{ type: 'text', text: lines.join('\n') }]
       },
     },
-    execute: args => handleData(dir, args),
+    execute: args => handleData(dir, args).then(jsonSafe),
   })
 
   ctx.tools.register({
@@ -615,7 +772,7 @@ function registerResearchTools(ctx, dir) {
         return [{ type: 'text', text: lines.join('\n') || 'ok' }]
       },
     },
-    execute: args => handleNotes(dir, args),
+    execute: args => handleNotes(dir, args).then(jsonSafe),
   })
 
   ctx.tools.register({
@@ -655,7 +812,47 @@ function registerResearchTools(ctx, dir) {
         return [{ type: 'text', text: lines.join('\n') }]
       },
     },
-    execute: args => handleCharts(dir, args),
+    execute: args => handleCharts(dir, args).then(jsonSafe),
+  })
+
+  ctx.tools.register({
+    name: 'stock_report',
+    description:
+      '把调研结果做成一份结论报告 HTML（报告头 / 结论带 / 五维打分 / 12 项排雷 / 图表 / 证据链 / 下一步）。'
+      + ' 前置条件：数据集已写入并通过 check，且档案里已有 verdict。缺数据的检查项写"无法判断"，不猜。',
+    parameters: {
+      action: { type: 'string', required: true, enum: ['emit', 'preview'], description: 'emit=写文件，preview=只检查能不能出' },
+      symbol: { type: 'string', required: true, description: '股票代码' },
+      path: { type: 'string', description: '自定义输出路径' },
+      force: { type: 'boolean', description: '数据不全也出（缺的项标无法判断）' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: true,
+        required: ['ok'],
+        properties: {
+          ok: { type: 'boolean' },
+          message: { type: 'string' },
+          path: { type: 'string' },
+          url: { type: 'string' },
+          bytes: { type: 'integer' },
+          figures: { type: 'integer' },
+          failed: { type: 'integer' },
+          status: { type: 'string' },
+          checks: { type: 'array', items: { type: 'object', additionalProperties: true } },
+        },
+      },
+      render: (_a, v) => {
+        const lines = [v.message || 'ok']
+        if (v.status) lines.push(`结论：${v.status}；异常 ${v.failed == null ? '—' : v.failed} 项`)
+        const bad = (v.checks || []).filter(c => c.state === 'bad')
+        for (const c of bad) lines.push(`  ! ${c.name}：${c.evidence}`)
+        if (v.url) lines.push(`打开：${v.url}`)
+        return [{ type: 'text', text: lines.join('\n') }]
+      },
+    },
+    execute: args => handleReport(dir, args).then(jsonSafe),
   })
 }
 
@@ -744,8 +941,9 @@ export function apply(ctx, config = {}) {
         return [{ type: 'text', text: lines.join('\n') || 'ok' }]
       },
     },
-    async execute(args) {
-      return handle(args.action, args, dir)
+    async execute(args, exec) {
+      const sessionId = exec && exec.agent && exec.agent.session ? exec.agent.session.id : undefined
+      return jsonSafe(await handle(args.action, args, dir, { sessionId }))
     },
   })
 
@@ -779,7 +977,8 @@ export function apply(ctx, config = {}) {
       name: 'tool:stock-os',
       order: 900,
       text: '涉及个股买卖、持仓管理、交易记录时：先用 stock_playbook 读对应阶段手册，再用 stock_os 读写档案。'
-        + ' 买前调研的顺序是硬性的：stock_data 写入并检查近五年财报数据 → stock_notes 检索依据 → stock_charts 出图（可选）→ 才允许 stock_os verdict。'
+        + ' 买前调研的顺序是硬性的：stock_data 写入并检查近五年财报数据 → stock_notes 检索依据 → stock_charts 出图（可选）→ stock_os verdict 写结论 → stock_report 出结论报告。'
+        + ' stock_report 只在有 verdict 时可用；报告里"无法判断"的检查项就写无法判断，不要用行业均值或上年数据补。'
         + ' 本工具不预测涨跌；任何"该买了/该卖了"的判断都要落到规则条文与记录上。',
     })
   } catch {

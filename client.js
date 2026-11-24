@@ -368,8 +368,9 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function DossierList({ rows, selected, onSelect, filter, onFilter }) {
+    function DossierList({ rows, selected, onSelect, onDelete, filter, onFilter }) {
       const q = (filter || '').trim().toUpperCase()
+      const [confirming, setConfirming] = useState('')
       const filtered = !q ? rows : rows.filter((r) =>
         String(r.symbol || '').includes(q)
         || String(r.name || '').toUpperCase().includes(q)
@@ -384,11 +385,18 @@ window.__ModuleLoader__.load({
           onChange: (e) => onFilter(e.target.value),
         }),
         filtered.length === 0
-          ? h('div', { key: 'empty', style: css.muted }, '还没有档案。可在下方新建，或在对话里让 agent 执行 stock_os init。')
-          : filtered.map((r) => h('button', {
+          ? h('div', { key: 'empty', style: css.muted }, '还没有档案。在下方输入代码开新对话，让 agent 从收集五年数据开始。')
+          : filtered.map((r) => h('div', {
             key: r.symbol,
-            type: 'button',
+            role: 'button',
+            tabIndex: 0,
             onClick: () => onSelect(r.symbol),
+            onKeyDown: (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onSelect(r.symbol)
+              }
+            },
             style: {
               ...css.card,
               ...(selected === r.symbol ? css.cardActive : null),
@@ -396,15 +404,38 @@ window.__ModuleLoader__.load({
               textAlign: 'left',
               cursor: 'pointer',
               marginBottom: 8,
-              color: 'inherit',
             },
           }, [
             h('div', {
               key: 'top',
-              style: { display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4 },
+              style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 4 },
             }, [
               h('strong', { key: 'sym', style: { fontSize: 13 } }, r.symbol),
-              h('span', { key: 'v', style: css.chip(verdictTone(r.verdict)) }, r.verdict || '未出'),
+              h('span', { key: 'acts', style: { display: 'flex', alignItems: 'center', gap: 6 } }, [
+                h('span', { key: 'v', style: css.chip(verdictTone(r.verdict)) }, r.verdict || '未出'),
+                h('button', {
+                  key: 'del',
+                  type: 'button',
+                  title: confirming === r.symbol ? '再点一次确认删除' : '删除这份档案',
+                  onClick: (e) => {
+                    e.stopPropagation()
+                    if (confirming === r.symbol) {
+                      setConfirming('')
+                      if (onDelete) onDelete(r.symbol)
+                    } else {
+                      setConfirming(r.symbol)
+                    }
+                  },
+                  style: {
+                    ...css.btn,
+                    padding: '1px 8px',
+                    fontSize: 11,
+                    ...(confirming === r.symbol
+                      ? { color: 'var(--dsw-alias-state-danger-primary)', borderColor: 'var(--dsw-alias-state-danger-primary)' }
+                      : { color: 'var(--dsw-alias-label-secondary)' }),
+                  },
+                }, confirming === r.symbol ? '确认删除' : '删除'),
+              ]),
             ]),
             h('div', { key: 'name', style: { ...css.muted, marginBottom: 6 } }, r.name || '未命名'),
             h('div', {
@@ -419,42 +450,62 @@ window.__ModuleLoader__.load({
       ])
     }
 
-    function InitForm({ onCreated }) {
+    /**
+     * Workspace navigation service. `ctx.get` bypasses the inject gate, so this
+     * works even when the plugin was not declared with `uiWorkspace` injected;
+     * the direct property read stays as a fallback for older clients.
+     */
+    function workspaceNav(ctx) {
+      try {
+        if (ctx && typeof ctx.get === 'function') {
+          const service = ctx.get('uiWorkspace')
+          if (service) return service
+        }
+      } catch {
+        // not injected in this build — try the property below
+      }
+      try {
+        if (ctx && ctx.uiWorkspace) return ctx.uiWorkspace
+      } catch {
+        // ignore
+      }
+      return null
+    }
+
+    function StartResearch({ ctx }) {
       const [symbol, setSymbol] = useState('')
       const [name, setName] = useState('')
-      const [capital, setCapital] = useState('200000')
-      const [busy, setBusy] = useState(false)
       const [error, setError] = useState('')
 
-      async function submit(e) {
-        e.preventDefault()
-        setBusy(true)
+      function open() {
+        const sym = symbol.trim().toUpperCase()
+        const who = sym ? sym + (name.trim() ? '（' + name.trim() + '）' : '') : '一只股票'
+        const prompt = sym
+          ? '调研 ' + who + '。先 stock_data 把近五年财报数据（营收 / 归母净利 / 经营现金流等）按年份写进去，用 action=check 确认通过；再用 stock_notes 检索判断依据、stock_charts 看趋势；然后按 stock_playbook stage=research 的清单给结论，用 stock_os verdict 写入。数据不齐就不要写结论。'
+          : '我想开始调研一只股票：先问我代码、公司名、账户资金规模和关注点，然后按 stock_playbook stage=research 的流程，从 stock_data 收集近五年财报数据开始。'
         setError('')
         try {
-          const result = await api('/api/init', {
-            method: 'POST',
-            body: JSON.stringify({
-              symbol: symbol.trim(),
-              name: name.trim() || undefined,
-              capital: Number(capital) || 0,
-            }),
-          })
-          setSymbol('')
-          setName('')
-          onCreated && onCreated(result.dossier && result.dossier.symbol)
+          const nav = workspaceNav(ctx)
+          if (nav && typeof nav.startSession === 'function') {
+            nav.startSession(undefined, { prompt, whenDraftExists: 'replace' })
+            return
+          }
+          throw new Error('当前客户端不支持直接新建会话，提示词已复制到剪贴板')
         } catch (err) {
           setError(err.message || String(err))
-        } finally {
-          setBusy(false)
+          try {
+            if (navigator.clipboard) navigator.clipboard.writeText(prompt)
+          } catch {
+            // ignore
+          }
         }
       }
 
-      return h('form', { onSubmit: submit, style: { display: 'grid', gap: 8 } }, [
+      return h('div', { style: { display: 'grid', gap: 8 } }, [
         h('input', {
           key: 'symbol',
           style: css.input,
-          required: true,
-          placeholder: '代码，如 600519.SH',
+          placeholder: '代码，如 600519.SH（留空则先问）',
           value: symbol,
           onChange: (e) => setSymbol(e.target.value),
         }),
@@ -465,22 +516,15 @@ window.__ModuleLoader__.load({
           value: name,
           onChange: (e) => setName(e.target.value),
         }),
-        h('input', {
-          key: 'capital',
-          style: css.input,
-          type: 'number',
-          min: 0,
-          placeholder: '账户资金',
-          value: capital,
-          onChange: (e) => setCapital(e.target.value),
-        }),
+        h('div', { key: 'hint', style: css.muted },
+          '会在新对话里附上调研提示词；档案由 agent 在调研阶段用 stock_os init 创建。'),
         error ? h('div', { key: 'err', style: { ...css.muted, ...css.danger } }, error) : null,
         h('button', {
           key: 'go',
-          type: 'submit',
-          disabled: busy,
+          type: 'button',
           style: css.btnPrimary,
-        }, busy ? '创建中…' : '新建档案'),
+          onClick: open,
+        }, '在新对话里开始调研'),
       ])
     }
 
@@ -490,6 +534,9 @@ window.__ModuleLoader__.load({
       const [price, setPrice] = useState('')
       const [guards, setGuards] = useState(null)
       const [busy, setBusy] = useState(false)
+      const [report, setReport] = useState(null)
+      const [reportErr, setReportErr] = useState('')
+      const [preview, setPreview] = useState('')
 
       const load = useCallback(async () => {
         if (!symbol) return
@@ -518,6 +565,23 @@ window.__ModuleLoader__.load({
         }
       }
 
+      async function runReport() {
+        setBusy(true)
+        setReportErr('')
+        try {
+          const result = await api('/api/report', {
+            method: 'POST',
+            body: JSON.stringify({ symbol }),
+          })
+          setReport(result)
+          if (result.url) setPreview(result.url)
+        } catch (err) {
+          setReportErr(err.message || String(err))
+        } finally {
+          setBusy(false)
+        }
+      }
+
       if (!symbol) {
         return h('div', { style: { ...css.card, ...css.muted } }, '从左侧选择一只股票，或新建档案。')
       }
@@ -533,13 +597,39 @@ window.__ModuleLoader__.load({
         h(Section, {
           key: 'overview',
           title: (d.symbol || symbol) + (d.name ? ' · ' + d.name : ''),
-          right: h('button', {
-            type: 'button',
-            style: css.btnPrimary,
-            onClick: () => onContinue && onContinue(d),
-          }, '在对话中继续'),
+          right: h('span', { style: { display: 'flex', gap: 6 } }, [
+            h('button', {
+              key: 'report',
+              type: 'button',
+              style: css.btn,
+              disabled: busy,
+              onClick: runReport,
+            }, busy ? '生成中…' : '结论报告'),
+            h('button', {
+              key: 'continue',
+              type: 'button',
+              style: css.btnPrimary,
+              title: d.sessionId
+                ? '跳到写下这份档案的会话（' + String(d.sessionId).slice(0, 8) + '…）'
+                : '这份档案没有记录来源会话，会新开一个对话',
+              onClick: () => onContinue && onContinue(d),
+            }, '在对话中继续'),
+          ]),
         }, [
           h(StagePipeline, { key: 'pipe', stage: d.stage }),
+          reportErr ? h('div', { key: 'rerr', style: { ...css.danger, marginTop: 8, fontSize: 12 } }, reportErr) : null,
+          report && report.url
+            ? h('div', { key: 'rlink', style: { marginTop: 8, fontSize: 12 } }, [
+              h('a', {
+                href: report.url,
+                target: '_blank',
+                rel: 'noopener',
+                style: { color: 'var(--dsw-alias-brand-primary)' },
+              }, '打开结论报告'),
+              h('span', { style: { ...css.muted, marginLeft: 8 } },
+                '结论 ' + (report.status || '—') + ' · 异常 ' + (report.failed == null ? '—' : report.failed) + ' 项'),
+            ])
+            : null,
           h('div', {
             key: 'meta',
             style: { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10, fontSize: 12 },
@@ -657,6 +747,71 @@ window.__ModuleLoader__.load({
               : h('div', { key: 'ok', style: { fontSize: 12, ...css.success } }, '规则检查通过'))
             : h('div', { key: 'hint', style: css.muted }, '动作前先让规则说话。'),
         ]),
+
+        preview ? h('div', {
+          key: 'preview',
+          style: {
+            position: 'fixed',
+            inset: 0,
+            zIndex: 80,
+            background: 'rgba(15, 23, 42, 0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 24,
+          },
+          onClick: (e) => { if (e.target === e.currentTarget) setPreview('') },
+        }, [
+          h('div', {
+            key: 'panel',
+            style: {
+              width: 'min(1120px, 96vw)',
+              height: '92vh',
+              display: 'flex',
+              flexDirection: 'column',
+              background: 'var(--dsw-alias-bg-base)',
+              border: '0.5px solid var(--dsw-alias-border-l1)',
+              borderRadius: 12,
+              overflow: 'hidden',
+              boxShadow: '0 24px 60px rgba(0, 0, 0, 0.28)',
+            },
+          }, [
+            h('div', {
+              key: 'bar',
+              style: {
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                padding: '10px 14px',
+                borderBottom: '0.5px solid var(--dsw-alias-border-l1)',
+              },
+            }, [
+              h('strong', { key: 't', style: { fontSize: 13 } }, '结论报告 · ' + symbol),
+              h('div', { key: 'b', style: { display: 'flex', gap: 8 } }, [
+                h('a', {
+                  key: 'open',
+                  href: preview,
+                  target: '_blank',
+                  rel: 'noopener',
+                  style: { ...css.btn, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' },
+                }, '新标签打开'),
+                h('button', {
+                  key: 'x',
+                  type: 'button',
+                  style: css.btn,
+                  onClick: () => setPreview(''),
+                }, '关闭'),
+              ]),
+            ]),
+            h('iframe', {
+              key: 'f',
+              src: preview,
+              title: '结论报告',
+              style: { flex: 1, width: '100%', border: 0, background: '#fff' },
+            }),
+          ]),
+        ]) : null,
       ])
     }
 
@@ -860,18 +1015,40 @@ window.__ModuleLoader__.load({
         if (!symbol) return
         const prompt = '打开 ' + symbol + (dossier.name ? '（' + dossier.name + '）' : '')
           + ' 的投资决策账本：先 stock_os action=get，再按当前阶段读 stock_playbook，告诉我下一步该做什么。'
+        const nav = workspaceNav(ctx)
+        if (dossier.sessionId && nav && typeof nav.openSession === 'function') {
+          try {
+            nav.openSession(dossier.sessionId)
+            return
+          } catch {
+            // 会话可能已被删除，退回新开一个
+          }
+        }
         try {
-          if (ctx.uiWorkspace && typeof ctx.uiWorkspace.startSession === 'function') {
-            ctx.uiWorkspace.startSession(undefined, { prompt, whenDraft: 'replace' })
+          if (nav && typeof nav.startSession === 'function') {
+            nav.startSession(undefined, { prompt, whenDraftExists: 'replace' })
             return
           }
         } catch {
           // fall through
         }
         try {
-          navigator.clipboard && navigator.clipboard.writeText(prompt)
+          if (navigator.clipboard) navigator.clipboard.writeText(prompt)
         } catch {
           // ignore
+        }
+      }
+
+      async function removeDossier(symbol) {
+        try {
+          await api('/api/delete', {
+            method: 'POST',
+            body: JSON.stringify({ symbol }),
+          })
+          if (selected === symbol) setSelected('')
+          await refresh()
+        } catch (err) {
+          setError(err.message || String(err))
         }
       }
 
@@ -896,6 +1073,7 @@ window.__ModuleLoader__.load({
         h('div', { key: 'tabs', style: css.tabs }, [
           ['dossiers', t('tabDossiers')],
           ['playbooks', t('tabPlaybooks')],
+          ['prompts', t('tabPrompts')],
           ['journal', t('tabJournal')],
           ['notes', t('tabNotes')],
         ].map(([id, label]) => h('button', {
@@ -921,18 +1099,16 @@ window.__ModuleLoader__.load({
                 rows,
                 selected,
                 onSelect: setSelected,
+                onDelete: removeDossier,
                 filter,
                 onFilter: setFilter,
               }),
               h('div', { key: 'init', style: { ...css.card, marginTop: 8 } }, [
                 h('div', { key: 'h', style: { fontSize: 13, fontWeight: 600, marginBottom: 8 } },
                   t('newDossier')),
-                h(InitForm, {
+                h(StartResearch, {
                   key: 'form',
-                  onCreated: async (symbol) => {
-                    await refresh()
-                    if (symbol) setSelected(symbol)
-                  },
+                  ctx,
                 }),
               ]),
             ]),
@@ -942,9 +1118,77 @@ window.__ModuleLoader__.load({
             })),
           ]) : null,
           tab === 'playbooks' ? h(PlaybooksView, { key: 'pb' }) : null,
+          tab === 'prompts' ? h(PromptsView, { key: 'pr' }) : null,
           tab === 'journal' ? h(JournalView, { key: 'j', symbolFilter: selected || '' }) : null,
           tab === 'notes' ? h(NotesView, { key: 'notes' }) : null,
         ]),
+      ])
+    }
+
+    function PromptsView() {
+      const [stages, setStages] = useState([])
+      const [hint, setHint] = useState('')
+      const [error, setError] = useState('')
+      const [copied, setCopied] = useState('')
+
+      useEffect(() => {
+        api('/api/prompts')
+          .then((d) => {
+            setStages(d.stages || [])
+            setHint(d.hint || '')
+          })
+          .catch((err) => setError(err.message || String(err)))
+      }, [])
+
+      function copy(id, text) {
+        try {
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(text)
+            setCopied(id)
+            setTimeout(() => setCopied(''), 1500)
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (error) return h('div', { style: { ...css.card, ...css.danger } }, error)
+
+      return h('div', null, [
+        h('div', { key: 'intro', style: { ...css.card, marginBottom: 12 } }, [
+          h('div', { key: 't', style: { fontSize: 13, fontWeight: 600, marginBottom: 6 } }, '每个阶段怎么往下走'),
+          h('div', { key: 'd', style: { ...css.muted, lineHeight: 1.6 } },
+            '按当前阶段挑一句，把代码换成你的股票再发出去。' + (hint ? ' ' + hint : '')),
+          h('div', { key: 'n', style: { ...css.muted, marginTop: 6 } },
+            '规则：数据没通过 stock_data check 之前不要写 verdict；没有宪法不要建仓；每次动作都要留流水。'),
+        ]),
+        stages.map((s) => h('section', { key: s.stage, style: { ...css.card, marginBottom: 10 } }, [
+          h('div', {
+            key: 'h',
+            style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 4 },
+          }, [
+            h('div', { key: 'l', style: { fontSize: 13, fontWeight: 600 } }, s.label),
+            h('div', { key: 'w', style: css.muted }, s.when),
+          ]),
+          ...(s.prompts || []).map((p, i) => h('div', {
+            key: 'p' + i,
+            style: { borderTop: '0.5px solid var(--dsw-alias-border-l1)', padding: '10px 0' },
+          }, [
+            h('div', {
+              key: 'pt',
+              style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 4 },
+            }, [
+              h('span', { key: 'x', style: { fontSize: 12, fontWeight: 600 } }, p.title),
+              h('button', {
+                key: 'c',
+                type: 'button',
+                style: { ...css.btn, padding: '2px 9px', fontSize: 11 },
+                onClick: () => copy(s.stage + i, p.text),
+              }, copied === s.stage + i ? '已复制' : '复制'),
+            ]),
+            h('div', { key: 'tx', style: { fontSize: 12, lineHeight: 1.65, whiteSpace: 'pre-wrap' } }, p.text),
+          ])),
+        ])),
       ])
     }
 
@@ -970,6 +1214,10 @@ window.__ModuleLoader__.load({
       }))
     }
 
+    if (typeof window !== 'undefined' && typeof window.__STOCK_OS_TEST__ === 'function') {
+      window.__STOCK_OS_TEST__({ LedgerPage, DetailPanel, DossierList, StartResearch, PromptsView })
+    }
+
     return {
       inject: ['slots', 'locale'],
 
@@ -982,6 +1230,7 @@ window.__ModuleLoader__.load({
             refresh: '刷新',
             tabDossiers: '档案',
             tabPlaybooks: '手册',
+            tabPrompts: '提示词',
             tabJournal: '流水',
             tabNotes: '财报笔记',
             newDossier: '新建档案',
@@ -993,6 +1242,7 @@ window.__ModuleLoader__.load({
             refresh: 'Refresh',
             tabDossiers: 'Dossiers',
             tabPlaybooks: 'Playbooks',
+            tabPrompts: 'Prompts',
             tabJournal: 'Journal',
             tabNotes: 'Fin. notes',
             newDossier: 'New dossier',
