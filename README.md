@@ -6,12 +6,13 @@
 
 ---
 
-## 一、它装进来两个工具
+## 一、它装进来什么
 
-| 工具 | 作用 |
+| 能力 | 作用 |
 | --- | --- |
 | `stock_os` | 读写一只股票的档案：初始化、写结论、立宪法、定回撤预案、记交易、风控告警、追加流水、列档案 |
 | `stock_playbook` | 按阶段取出手册：`conductor` / `research` / `plan` / `entry` / `add` / `hold` / `reduce` / `exit` / `review` |
+| 侧栏「投资账本」 | 网页工作台：档案列表/详情、手册、流水；交易写入仍建议在对话里按手册完成 |
 
 阶段是一条状态机，不是任务清单：
 
@@ -108,7 +109,9 @@ agent 会按 `research` 手册做九项核查（行业、生意、护城河、�
 ## 六、目录
 
 ```
-index.js            工具实现（零依赖，只用 node: 内置模块）
+index.js            Host：工具 + /stock-os API（零第三方依赖）
+client.js           Client：侧栏入口与主区页面
+lib/api.js          面板数据面
 cordis.patch.yml    插件入口声明
 playbooks/          九本阶段手册（按需读取，不常驻上下文）
 locale/             zh / en 展示文本

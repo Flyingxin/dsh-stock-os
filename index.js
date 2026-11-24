@@ -16,6 +16,7 @@ import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { registerApi } from './lib/api.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const STAGES = ['idea', 'research', 'plan', 'open', 'hold', 'closed']
@@ -378,10 +379,16 @@ async function handle(action, args, dir) {
 const ACTION_SCHEMA = { type: 'string', required: true, enum: ['init', 'get', 'list', 'verdict', 'constitution', 'plan', 'stage', 'trade', 'journal', 'guards'], description: '要执行的动作' }
 
 export const name = 'stock-os'
-export const inject = ['tools']
+export const inject = ['tools', 'webServer']
 
 export function apply(ctx, config = {}) {
   const dir = dataDir(config)
+
+  registerApi(ctx, {
+    dir,
+    handle,
+    playbooksDir: path.join(HERE, 'playbooks'),
+  })
 
   ctx.tools.register({
     name: 'stock_os',

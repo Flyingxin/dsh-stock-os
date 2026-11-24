@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Investment decision ledger",
-    "description": "Written rules before any trade and one record per action, with an eight-stage playbook and a per-company decision dossier."
+    "description": "Written rules before any trade and one record per action. The sidebar workbench browses dossiers, playbooks and journal; stock_os / stock_playbook continue the decision flow in chat."
   }
 }

@@ -2,12 +2,15 @@
 
 把"靠感觉买卖"换成"有规则、有记录、可复盘"。插件不预测涨跌，也不下单；它只保证三件事：**动手前规则已经写好、每个动作留一条记录、规则不能被事后悄悄改掉。**
 
-## 两个工具
+## 两个工具 + 一个侧栏页
 
-| 工具 | 作用 |
+| 能力 | 作用 |
 |---|---|
 | `stock_playbook` | 读某一阶段的操作手册：`conductor`（总纲）、`research`（买前调研）、`plan`（策略宪法）、`entry`（建仓）、`add`（加仓）、`hold`（持有）、`reduce`（减仓）、`exit`（清仓）、`review`（复盘） |
 | `stock_os` | 读写信贷档案与流水：`init / get / list / verdict / constitution / plan / stage / trade / journal / guards` |
+| 侧栏「投资账本」 | Client 半边页面：档案列表/详情、手册浏览、流水；数据走 Host 的 `/stock-os/api/*` |
+
+买卖写入（`trade` / `constitution` / `verdict` 等）仍建议在对话里完成——页面负责看清状态与跑 `guards`，不替代手册流程。
 
 ## 典型用法
 
