@@ -1,6 +1,6 @@
 {
   "name": "dsh-stock-os",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Investment decision ledger for DeepSeek Harness: written rules before trades, one record per action, with a sidebar workbench.",
   "type": "module",
   "main": "index.js",
@@ -36,6 +36,7 @@
     "index.js",
     "client.js",
     "lib",
+    "lab",
     "cordis.patch.yml",
     "playbooks",
     "locale",

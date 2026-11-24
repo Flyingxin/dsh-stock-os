@@ -388,6 +388,7 @@ export function apply(ctx, config = {}) {
     dir,
     handle,
     playbooksDir: path.join(HERE, 'playbooks'),
+    labDir: path.join(HERE, 'lab'),
   })
 
   ctx.tools.register({

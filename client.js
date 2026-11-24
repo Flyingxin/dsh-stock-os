@@ -12,6 +12,7 @@ window.__ModuleLoader__.load({
     const NS = 'stock-os'
     const PANEL_ID = 'stock-os'
     const API = '/stock-os'
+    const NOTES_URL = '/stock-os/fin-notes.html'
     const STAGE_ORDER = ['idea', 'research', 'plan', 'open', 'hold', 'closed']
     const PLAYBOOK_ORDER = [
       'conductor', 'research', 'plan', 'entry', 'add', 'hold', 'reduce', 'exit', 'review',
@@ -896,13 +897,19 @@ window.__ModuleLoader__.load({
           ['dossiers', t('tabDossiers')],
           ['playbooks', t('tabPlaybooks')],
           ['journal', t('tabJournal')],
+          ['notes', t('tabNotes')],
         ].map(([id, label]) => h('button', {
           key: id,
           type: 'button',
           style: css.tab(tab === id),
           onClick: () => setTab(id),
         }, label))),
-        h('div', { key: 'body', style: css.body }, [
+        h('div', {
+          key: 'body',
+          style: tab === 'notes'
+            ? { ...css.body, padding: '0 0 0', overflow: 'hidden', display: 'flex', flexDirection: 'column' }
+            : css.body,
+        }, [
           error ? h('div', {
             key: 'err',
             style: { ...css.card, ...css.danger, marginBottom: 12 },
@@ -936,8 +943,31 @@ window.__ModuleLoader__.load({
           ]) : null,
           tab === 'playbooks' ? h(PlaybooksView, { key: 'pb' }) : null,
           tab === 'journal' ? h(JournalView, { key: 'j', symbolFilter: selected || '' }) : null,
+          tab === 'notes' ? h(NotesView, { key: 'notes' }) : null,
         ]),
       ])
+    }
+
+    function NotesView() {
+      return h('div', {
+        style: {
+          flex: 1,
+          minHeight: 0,
+          height: '100%',
+          overflow: 'hidden',
+          background: 'var(--dsw-alias-bg-base)',
+        },
+      }, h('iframe', {
+        title: '财报分析笔记',
+        src: NOTES_URL,
+        style: {
+          width: '100%',
+          height: '100%',
+          border: 0,
+          display: 'block',
+          background: 'transparent',
+        },
+      }))
     }
 
     return {
@@ -953,6 +983,7 @@ window.__ModuleLoader__.load({
             tabDossiers: '档案',
             tabPlaybooks: '手册',
             tabJournal: '流水',
+            tabNotes: '财报笔记',
             newDossier: '新建档案',
           },
           en: {
@@ -963,6 +994,7 @@ window.__ModuleLoader__.load({
             tabDossiers: 'Dossiers',
             tabPlaybooks: 'Playbooks',
             tabJournal: 'Journal',
+            tabNotes: 'Fin. notes',
             newDossier: 'New dossier',
           },
         }), 'stock-os: dictionaries')
