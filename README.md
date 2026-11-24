@@ -12,7 +12,19 @@
 | --- | --- |
 | `stock_os` | 读写一只股票的档案：初始化、写结论、立宪法、定回撤预案、记交易、风控告警、追加流水、列档案 |
 | `stock_playbook` | 按阶段取出手册：`conductor` / `research` / `plan` / `entry` / `add` / `hold` / `reduce` / `exit` / `review` |
+| `stock_data` | 近五年财报数据集：`set` 写入、`check` 看还缺什么（会告诉你每个科目去报表哪一行拿）、`get` 取回 |
+| `stock_notes` | 8 章 132 节财报笔记当检索器：`search` 定位到具体节号与原句、`toc` 看目录、`emit` 生成带调研水印的 HTML |
+| `stock_charts` | 用数据集直接出图表概览 HTML：收入/利润/现金流/应收/存货/杠杆/ROE/PE/PB/股东回报/季度，只画有数据的图 |
 | 侧栏「投资账本」 | 网页工作台：档案列表/详情、手册、流水；交易写入仍建议在对话里按手册完成 |
+
+调研有先后顺序，而且是硬性的：
+
+```
+stock_data（近五年，check 通过）──▶ stock_notes（找依据）──▶ stock_charts（出图，可选）──▶ stock_os verdict
+```
+
+没有通过检查的数据集，`verdict` 会被拒绝写入；确实拿不到数据时，唯一允许的结论是 `na`，并要写清缺什么、去哪拿。
+
 
 阶段是一条状态机，不是任务清单：
 
@@ -89,7 +101,18 @@ git clone https://github.com/Flyingxin/dsh-stock-os.git
 帮我看看 600519.SH 现在能不能买
 ```
 
-agent 会按 `research` 手册做九项核查（行业、生意、护城河、财务底稿、估值、内部人……），把结论写成 `verdict`：`pass` / `watch` / `fail` / `na`。只有 `pass` 和 `watch` 才允许往下走。
+第一步不是画图，也不是下结论，而是**把近五年财报数据摊开**：
+
+```
+stock_data action=set symbol=600519.SH dataset={ years:[...], series:{ revenue:[...], netProfit:[...], opCash:[...], ... } }
+stock_data action=check symbol=600519.SH
+```
+
+`check` 会逐项告诉你缺什么、去报表哪一行拿。数据完整之后，agent 会按 `research` 手册做九项核查（行业、生意、护城河、财务底稿、估值、内部人……），中途用 `stock_notes` 检索依据、用 `stock_charts` 出图，最后把结论写成 `verdict`：`pass` / `watch` / `fail` / `suspect` / `na`。只有 `pass` 和 `watch` 才允许往下走。
+
+接着立宪法（`plan` 阶段），至少写清：单只上限、分几批、首笔比例、止损线、止盈线、回撤预案、复盘周期。没有宪法，交易工具会直接拒绝执行——**这是设计，不是故障**。
+
+再往后：记首笔、记加仓、跑风控、减仓、清仓、复盘。每一步都可以只做一半就停，档案会记住停在哪。
 
 接着立宪法（`plan` 阶段），至少写清：单只上限、分几批、首笔比例、止损线、止盈线、回撤预案、复盘周期。没有宪法，交易工具会直接拒绝执行——**这是设计，不是故障**。
 
@@ -111,7 +134,11 @@ agent 会按 `research` 手册做九项核查（行业、生意、护城河、�
 ```
 index.js            Host：工具 + /stock-os API（零第三方依赖）
 client.js           Client：侧栏入口与主区页面
-lib/api.js          面板数据面
+lib/api.js          面板数据面（含 /api/data、/api/notes/search、/api/charts、/reports 静态页）
+lib/dataset.js      近五年数据集的存储与完整性检查（verdict 的准入门槛）
+lib/notes.js        132 节笔记的解析、检索、带水印导出
+lib/charts.js       数据集 → 图表概览 HTML（ECharts，缺数据不画）
+lab/fin-notes.html  交互式笔记（侧栏里直接打开）
 cordis.patch.yml    插件入口声明
 playbooks/          九本阶段手册（按需读取，不常驻上下文）
 locale/             zh / en 展示文本

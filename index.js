@@ -17,6 +17,9 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registerApi } from './lib/api.js'
+import { checkDataset, readDataset, writeDataset, SERIES_LABEL } from './lib/dataset.js'
+import { emit as emitNotes, loadIndex, parts as noteParts, search as searchNotes } from './lib/notes.js'
+import { buildChartsHtml } from './lib/charts.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const STAGES = ['idea', 'research', 'plan', 'open', 'hold', 'closed']
@@ -45,6 +48,29 @@ function dataDir(config) {
 }
 const dossierPath = (dir, symbol) => path.join(dir, symbol + '.json')
 const journalPath = dir => path.join(dir, 'journal.jsonl')
+const reportsDir = dir => path.join(dir, 'reports')
+const NOTES_HTML = () => path.join(HERE, 'lab', 'fin-notes.html')
+
+/** The research gate: no five-year dataset, no verdict. */
+async function requireDataset(dir, symbol, { force = false, why = '' } = {}) {
+  const dataset = await readDataset(dir, symbol)
+  const report = dataset ? checkDataset(dataset) : null
+  if (report && report.ok) return { dataset, report }
+  if (force) {
+    await appendJournal(dir, {
+      ts: now(), symbol, action: 'verdict-without-data',
+      reason: why || '未通过五年数据检查仍写入结论',
+    })
+    return { dataset, report }
+  }
+  const problems = report ? report.problems.slice() : ['还没有近五年财报数据']
+  if (report) {
+    const missing = report.missing.slice(0, 8).map(m => `${m.label}（${m.source}）`)
+    if (missing.length) problems.push(`缺：${missing.join('、')}`)
+  }
+  throw new Error(`买前结论必须先有近五年财报数据。${problems.join('；')}。`
+    + ' 用 stock_data action=set 写入（或 action=check 看还差什么），补全后再 verdict。')
+}
 
 function normalizeSymbol(raw) {
   const s = String(raw || '').trim().toUpperCase()
@@ -248,6 +274,13 @@ async function handle(action, args, dir) {
     case 'verdict': {
       const dossier = await loadDossier(dir, normalizeSymbol(args.symbol))
       if (!VERDICTS.includes(args.status)) throw new Error(`结论只能是 ${VERDICTS.join(' / ')}`)
+      // `na` is the honest answer when the data cannot be collected, so it is
+      // the one verdict that is allowed to exist without a complete dataset.
+      if (args.status !== 'na') {
+        await requireDataset(dir, dossier.symbol, { force: args.force, why: args.overrideReason })
+      } else {
+        await appendJournal(dir, { ts: now(), symbol: dossier.symbol, action: 'verdict-na', reason: args.summary || '数据不足，不出结论' })
+      }
       dossier.verdict = {
         status: args.status,
         summary: args.summary || null,
@@ -381,6 +414,251 @@ const ACTION_SCHEMA = { type: 'string', required: true, enum: ['init', 'get', 'l
 export const name = 'stock-os'
 export const inject = ['tools', 'webServer']
 
+async function handleData(dir, args) {
+  const action = args.action || 'check'
+  const symbol = args.symbol ? normalizeSymbol(args.symbol) : null
+  if (action === 'check' || action === 'get') {
+    if (!symbol) throw new Error('缺少 symbol')
+    const dataset = await readDataset(dir, symbol)
+    if (!dataset) {
+      return { ok: false, found: false, message: `${symbol} 还没有数据集：先用 stock_data action=set 写入近五年财报数据` }
+    }
+    const report = checkDataset(dataset)
+    return { ok: report.ok, found: true, dataset: action === 'get' ? dataset : undefined, report, message: report.ok ? `${symbol} 数据完整，可以开始分析` : `${symbol} 数据还不完整：${report.problems.join('；')}` }
+  }
+  if (action === 'set') {
+    if (!symbol) throw new Error('缺少 symbol')
+    const payload = args.dataset && typeof args.dataset === 'object' ? args.dataset : {}
+    const dataset = {
+      schema: 1,
+      unit: '亿元',
+      ...payload,
+      symbol,
+      name: args.name || payload.name || null,
+      sourcedAt: args.sourcedAt || payload.sourcedAt || null,
+      updatedAt: now(),
+    }
+    if (!Array.isArray(dataset.years)) throw new Error('dataset.years 必须是数组，如 [2021,2022,2023,2024,2025]')
+    const file = await writeDataset(dir, symbol, dataset)
+    const report = checkDataset(dataset)
+    await appendJournal(dir, {
+      ts: now(), symbol, action: 'dataset', stage: 'research',
+      reason: report.ok ? '写入近五年数据（完整）' : `写入近五年数据（缺 ${report.problems.length} 项）`,
+    })
+    return {
+      ok: report.ok,
+      file,
+      report,
+      message: report.ok
+        ? `${symbol} 数据写入完成，${report.years.length} 年，可以开始分析`
+        : `${symbol} 已保存，但还差：${report.problems.join('；')}`,
+    }
+  }
+  throw new Error('stock_data 的 action 只能是 set / get / check')
+}
+
+async function handleNotes(dir, args) {
+  const action = args.action || 'search'
+  const index = await loadIndex(NOTES_HTML())
+  const parts = noteParts(index)
+  if (action === 'toc') {
+    const part = args.part == null ? null : Number(args.part)
+    if (part != null) {
+      const hit = parts.find(p => p.part === part)
+      if (!hit) throw new Error(`没有第 ${part} 部分；可选 1–${parts.length}`)
+      return { ok: true, part: hit.part, name: hit.name, rows: hit.sections }
+    }
+    return {
+      ok: true,
+      count: index.sections.length,
+      rows: parts.map(p => ({ part: p.part, name: p.name, from: p.sections[0].no, to: p.sections[p.sections.length - 1].no, sections: p.sections.length })),
+    }
+  }
+  if (action === 'search') {
+    const rows = searchNotes(index, args.query || args.q, args.limit || 5)
+    return { ok: true, count: rows.length, rows }
+  }
+  if (action === 'emit') {
+    const symbol = args.symbol ? normalizeSymbol(args.symbol) : null
+    const target = args.path
+      ? path.resolve(args.path)
+      : path.join(reportsDir(dir), `${symbol || 'notes'}-notes.html`)
+    const out = await emitNotes(index, {
+      target,
+      symbol,
+      name: args.name,
+      sourcedAt: args.sourcedAt,
+      section: args.section,
+    })
+    return { ok: true, ...out, message: `笔记已生成：${out.path}` }
+  }
+  throw new Error('stock_notes 的 action 只能是 toc / search / emit')
+}
+
+async function handleCharts(dir, args) {
+  const action = args.action || 'emit'
+  const symbol = normalizeSymbol(args.symbol)
+  const dataset = await readDataset(dir, symbol)
+  if (!dataset) {
+    throw new Error(`${symbol} 还没有近五年数据：先 stock_data action=set，再出图`)
+  }
+  const report = checkDataset(dataset)
+  if (!report.ok && !args.force) {
+    throw new Error(`数据不完整，先补齐再出图：${report.problems.join('；')}（查缺用 stock_data action=check）`)
+  }
+  if (action === 'preview') {
+    const html = buildChartsHtml(dataset)
+    return { ok: true, chars: html.length, report }
+  }
+  const target = args.path
+    ? path.resolve(args.path)
+    : path.join(reportsDir(dir), `${symbol}-charts.html`)
+  const html = buildChartsHtml(dataset)
+  await fs.mkdir(path.dirname(target), { recursive: true })
+  await fs.writeFile(target, html, 'utf8')
+  const figures = (html.match(/class="chart"/g) || []).length
+  return {
+    ok: true,
+    path: target,
+    bytes: Buffer.byteLength(html, 'utf8'),
+    figures,
+    url: `/stock-os/reports/${path.basename(target)}`,
+    message: `图表概览已生成：${target}（${figures} 张图）`,
+    report,
+  }
+}
+
+function registerResearchTools(ctx, dir) {
+  ctx.tools.register({
+    name: 'stock_data',
+    description:
+      '近五年财报数据集：写前把利润表/资产负债表/现金流量表的关键科目按年份填进来，读前用 check 看还缺什么。'
+      + ' stock_os 的 verdict 会检查它——没有五年数据就写不了结论。',
+    parameters: {
+      action: { type: 'string', required: true, enum: ['set', 'get', 'check'], description: 'set=写入/覆盖，get=取回，check=完整性检查' },
+      symbol: { type: 'string', required: true, description: '股票代码，如 600519.SH' },
+      name: { type: 'string', description: '公司名' },
+      sourcedAt: { type: 'string', description: '数据截止（最新报告期或行情日）' },
+      dataset: {
+        type: 'object',
+        description: '数据体：{ years:[...], unit, series:{revenue,netProfit,grossMargin,opCash,capex,receivables,inventory,cash,debt,equity,totalAssets,netMargin,roe,dividend,buyback,equityRaise,pe,pb}, industry:{revenueGrowth,grossMargin,roe,debtRatio}, quarters:{labels,revenue,grossMargin} }。每个 series 数组长度须等于 years，缺值用 null',
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: true,
+        required: ['ok'],
+        properties: {
+          ok: { type: 'boolean' },
+          message: { type: 'string' },
+          file: { type: 'string' },
+          found: { type: 'boolean' },
+          report: { type: 'object', additionalProperties: true },
+          dataset: { type: 'object', additionalProperties: true },
+        },
+      },
+      render: (_a, v) => {
+        const lines = [v.message || (v.ok ? 'ok' : '未通过')]
+        if (v.report) {
+          const r = v.report
+          if (r.years && r.years.length) lines.push(`年份：${r.years[0]}–${r.years[r.years.length - 1]}（${r.years.length} 年），覆盖 ${Math.round(r.coverage * 100)}%`)
+          if (r.present && r.present.length) lines.push(`已有：${r.present.map(k => SERIES_LABEL[k] || k).join('、')}`)
+          if (r.problems && r.problems.length) for (const p of r.problems) lines.push('  ! ' + p)
+          if (r.missing && r.missing.length) lines.push(`  · 缺：${r.missing.map(m => m.label).join('、')}`)
+        }
+        return [{ type: 'text', text: lines.join('\n') }]
+      },
+    },
+    execute: args => handleData(dir, args),
+  })
+
+  ctx.tools.register({
+    name: 'stock_notes',
+    description:
+      '财报分析笔记（8 章 132 节）当工具用：search 定位到具体章节与原文摘句（结论要引用第几节），'
+      + ' toc 看目录，emit 生成可交互 HTML（可带调研对象水印与锚点）。',
+    parameters: {
+      action: { type: 'string', required: true, enum: ['search', 'toc', 'emit'], description: 'search=检索，toc=目录，emit=生成 HTML' },
+      query: { type: 'string', description: 'search：检索词，空格分隔多个词' },
+      limit: { type: 'number', description: 'search：返回条数，默认 5' },
+      part: { type: 'number', description: 'toc：只看第几部分（1–9）' },
+      section: { type: 'number', description: 'emit：打开时定位到第几节' },
+      symbol: { type: 'string', description: 'emit：调研对象代码（生成水印与文件名）' },
+      name: { type: 'string', description: 'emit：公司名' },
+      sourcedAt: { type: 'string', description: 'emit：数据截止' },
+      path: { type: 'string', description: 'emit：自定义输出路径' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: true,
+        required: ['ok'],
+        properties: {
+          ok: { type: 'boolean' },
+          count: { type: 'integer' },
+          message: { type: 'string' },
+          path: { type: 'string' },
+          url: { type: 'string' },
+          rows: { type: 'array', items: { type: 'object', additionalProperties: true } },
+        },
+      },
+      render: (_a, v) => {
+        const lines = []
+        if (v.message) lines.push(v.message)
+        for (const r of v.rows || []) {
+          if (r.from) lines.push(`第 ${r.part} 部分 ${r.name}：第 ${r.from}–${r.to} 节（${r.sections} 节）`)
+          else if (r.excerpt) lines.push(`第 ${r.no} 节 · ${r.title}${r.part ? '（' + r.part + '）' : ''}\n  ${r.excerpt}`)
+          else lines.push(`第 ${r.no} 节 · ${r.title}`)
+        }
+        if (v.url) lines.push(`打开：${v.url}`)
+        return [{ type: 'text', text: lines.join('\n') || 'ok' }]
+      },
+    },
+    execute: args => handleNotes(dir, args),
+  })
+
+  ctx.tools.register({
+    name: 'stock_charts',
+    description:
+      '把 stock_data 里的近五年数据画成图表概览 HTML（收入/利润/现金流/应收/存货/杠杆/ROE/PE/PB/股东回报/季度）。'
+      + ' 只画数据支持的图，缺的字段直接省略，不画预估线。',
+    parameters: {
+      action: { type: 'string', required: true, enum: ['emit', 'preview'], description: 'emit=写文件，preview=只检查能画几张' },
+      symbol: { type: 'string', required: true, description: '股票代码' },
+      path: { type: 'string', description: '自定义输出路径' },
+      force: { type: 'boolean', description: '数据不全也出图（缺失字段会省略）' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: true,
+        required: ['ok'],
+        properties: {
+          ok: { type: 'boolean' },
+          message: { type: 'string' },
+          path: { type: 'string' },
+          url: { type: 'string' },
+          figures: { type: 'integer' },
+          bytes: { type: 'integer' },
+          chars: { type: 'integer' },
+          report: { type: 'object', additionalProperties: true },
+        },
+      },
+      render: (_a, v) => {
+        const lines = [v.message || 'ok']
+        if (v.figures != null) lines.push(`图数：${v.figures}`)
+        if (v.url) lines.push(`打开：${v.url}`)
+        if (v.report && v.report.missing && v.report.missing.length) {
+          lines.push('未覆盖：' + v.report.missing.map(m => m.label).join('、'))
+        }
+        return [{ type: 'text', text: lines.join('\n') }]
+      },
+    },
+    execute: args => handleCharts(dir, args),
+  })
+}
+
 export function apply(ctx, config = {}) {
   const dir = dataDir(config)
 
@@ -389,7 +667,10 @@ export function apply(ctx, config = {}) {
     handle,
     playbooksDir: path.join(HERE, 'playbooks'),
     labDir: path.join(HERE, 'lab'),
+    reportsDir: reportsDir(dir),
   })
+
+  registerResearchTools(ctx, dir)
 
   ctx.tools.register({
     name: 'stock_os',
@@ -417,8 +698,8 @@ export function apply(ctx, config = {}) {
       qty: { type: 'number', description: 'trade：股数' },
       price: { type: 'number', description: 'trade：成交价；guards 时传当前价' },
       triggerId: { type: 'string', description: 'trade：触发的规则编号（如 stop-loss、exit-3）' },
-      force: { type: 'boolean', description: 'trade：跳过规则检查（必须同时给 overrideReason）' },
-      overrideReason: { type: 'string', description: 'trade：为什么值得破例' },
+      force: { type: 'boolean', description: 'trade：跳过规则检查（必须同时给 overrideReason）；verdict：没有五年数据也写入（留痕）' },
+      overrideReason: { type: 'string', description: 'trade/verdict：为什么值得破例' },
       snapshot: { type: 'object', description: 'trade：动作当时的估值与关键指标快照' },
       text: { type: 'string', description: 'journal：这一条要记什么' },
       kind: { type: 'string', description: 'journal：记录类型，如 review/notice/error' },
@@ -498,6 +779,7 @@ export function apply(ctx, config = {}) {
       name: 'tool:stock-os',
       order: 900,
       text: '涉及个股买卖、持仓管理、交易记录时：先用 stock_playbook 读对应阶段手册，再用 stock_os 读写档案。'
+        + ' 买前调研的顺序是硬性的：stock_data 写入并检查近五年财报数据 → stock_notes 检索依据 → stock_charts 出图（可选）→ 才允许 stock_os verdict。'
         + ' 本工具不预测涨跌；任何"该买了/该卖了"的判断都要落到规则条文与记录上。',
     })
   } catch {
