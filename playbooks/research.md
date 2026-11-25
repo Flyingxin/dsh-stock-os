@@ -7,10 +7,12 @@
 `stock_os verdict` 会检查这一步：没有通过检查的近五年财报数据，结论写不进去。
 
 1. **收集近五年年报与最新季报的关键科目**，写进 `stock_data action=set`：
-   - 必填三条主干：`revenue` 营业收入、`netProfit` 归母净利润、`opCash` 经营活动现金流净额（**五年都不能有空值**）。
+   - 市场：A/H 用 `600519.SH` / `00700.HK`；美股用 `AAPL` / `AAPL.US` / `TSLA.NASDAQ`（裸代码会归一成 `*.US`）。
+   - 货币单位写进 `unit`：A 股常用 `亿元`，美股常用 `百万美元` / `十亿美元`，前后保持一致即可。
+   - 必填三条主干：`revenue` 营业收入、`netProfit` 归母净利润（美股对应 net income attributable to common）、`opCash` 经营活动现金流净额（**五年都不能有空值**）。A/H 去年报；美股去 10-K / 10-Q / annual report。
    - 再补至少 3 项：`grossMargin` 毛利率、`receivables` 应收、`inventory` 存货、`cash` 货币资金、`debt` 有息负债、`totalAssets` 总资产、`equity` 归母净资产、`roe`、`pe`、`pb`、`dividend`、`capex`、`equityRaise`。
    - 每个数组长度必须等于 `years`，某年真拿不到就写 `null`（图上会留缺口，不会编数）。
-2. `stock_data action=check` 复查，直到返回"数据完整"。差什么，它会告诉你科目名和**去报表哪一行拿**。
+2. `stock_data action=check` 复查，直到返回"数据完整"。差什么，它会告诉你科目名和**去报表哪一行拿**（提示按 A 股科目口径；美股自行对应到同名 IFRS/US-GAAP 行）。
 3. 数据不完整时只有两条路：补齐，或 `verdict` 时显式 `force: true` + `overrideReason`（会留痕，复盘时要解释）。
 
 顺序固定的原因：先有数，才有图；先有图，才有判断；先有判断，才写规则。反过来做的，都是在给自己找理由。

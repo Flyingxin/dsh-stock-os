@@ -624,7 +624,7 @@ window.__ModuleLoader__.load({
         h('input', {
           key: 'symbol',
           style: css.input,
-          placeholder: '代码，如 600519.SH（留空则先问）',
+          placeholder: '代码，如 600519.SH / AAPL.US（留空则先问）',
           value: symbol,
           onChange: (e) => setSymbol(e.target.value),
         }),

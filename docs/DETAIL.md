@@ -30,9 +30,13 @@ stock_next symbol=600519.SH          # 再问一次：该立宪法了吗？
 stock_os action=constitution / plan / stage …
 stock_os action=guards symbol=600519.SH price=1520
 stock_os action=trade …
+
+# 美股同流程；裸代码会归一成 *.US
+stock_os action=init symbol=AAPL name=Apple capital=200000
+stock_next symbol=AAPL.US
 ```
 
-第一次打开某只票，也可以只说「打开 600519」，agent 应先 `stock_status` 或 `stock_next`。
+代码市场：A/H 为 `.SH` / `.SZ` / `.BJ` / `.HK`；美股为 `.US` / `.NYSE` / `.NASDAQ` / `.AMEX` / `.OTC`。第一次打开也可以只说「打开 AAPL」或「打开 600519」，agent 应先 `stock_status` 或 `stock_next`。
 
 ## 硬规则（写死在工具里）
 

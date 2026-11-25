@@ -20,7 +20,7 @@
 | `stock_report` | 把调研结论做成结论报告 HTML：报告头 / 结论带 / 五维打分 / 12 项排雷检查 / 图表 / 证据链 / 下一步。缺数据的项写"无法判断"，不猜 |
 | 侧栏「投资账本」 | **工作台**（下一步英雄区 + 就绪度）与资料页（手册 / 提示词 / 流水 / 笔记）；与 Agent 共用 guidance |
 
-涉及个股时先 `stock_status` / `stock_next`，再按返回的 `suggestedCalls` 执行写操作。
+涉及个股时先 `stock_status` / `stock_next`，再按返回的 `suggestedCalls` 执行写操作。代码支持 A/H 股（`600519.SH` / `00700.HK`）与美股（`AAPL` / `AAPL.US` / `TSLA.NASDAQ`；裸美股代码会归一成 `*.US`）。
 
 调研有先后顺序，而且是硬性的：
 

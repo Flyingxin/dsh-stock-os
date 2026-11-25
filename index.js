@@ -98,10 +98,35 @@ async function requireDataset(dir, symbol, { force = false, why = '' } = {}) {
     + ' 用 stock_data action=set 写入（或 action=check 看还差什么），补全后再 verdict。')
 }
 
+/**
+ * Normalize ticker to SYMBOL.MARKET.
+ * - A/H: 600519.SH / 300750.SZ / 00700.HK（也容忍无后缀的 600519）
+ * - US: AAPL / TSLA → AAPL.US；已写 AAPL.US / TSLA.NASDAQ 则保留
+ * - 美股优先股/多级：BRK.B、BRK-B → BRK-B.US
+ */
 function normalizeSymbol(raw) {
-  const s = String(raw || '').trim().toUpperCase()
-  if (!/^[0-9A-Z]{5,9}(\.[A-Z]{2,4})?$/.test(s)) {
-    throw new Error(`股票代码格式异常："${raw}"。示例：600519.SH / 300750.SZ / 00700.HK`)
+  let s = String(raw || '').trim().toUpperCase()
+  if (!s) {
+    throw new Error('股票代码为空。示例：600519.SH / 00700.HK / AAPL.US / TSLA')
+  }
+  // US share class: BRK.B → BRK-B（避免与 .US/.SH 市场后缀混淆）
+  if (/^[A-Z]{1,5}\.[A-Z]$/.test(s)) {
+    s = s.replace('.', '-')
+  }
+  // Bare US equity ticker → default .US
+  if (/^[A-Z]{1,5}(-[A-Z])?$/.test(s)) {
+    s = s + '.US'
+  }
+  const cnHk = /^[0-9]{4,6}\.(SH|SZ|BJ|HK)$/.test(s)
+  const cnHkAlnum = /^[0-9A-Z]{5,9}\.(SH|SZ|BJ|HK)$/.test(s)
+  const us = /^[A-Z]{1,5}(-[A-Z])?\.(US|NYSE|NASDAQ|AMEX|OTC)$/.test(s)
+  const legacyBare = /^[0-9A-Z]{5,9}$/.test(s)
+  if (!(cnHk || cnHkAlnum || us || legacyBare)) {
+    throw new Error(
+      `股票代码格式异常："${raw}"。`
+      + 'A/H 股示例：600519.SH / 300750.SZ / 00700.HK；'
+      + '美股示例：AAPL / AAPL.US / TSLA.NASDAQ / BRK-B.US',
+    )
   }
   return s
 }
@@ -739,7 +764,7 @@ function registerResearchTools(ctx, dir) {
       + ' stock_os 的 verdict 会检查它——没有五年数据就写不了结论。',
     parameters: {
       action: { type: 'string', required: true, enum: ['set', 'get', 'check'], description: 'set=写入/覆盖，get=取回，check=完整性检查' },
-      symbol: { type: 'string', required: true, description: '股票代码，如 600519.SH' },
+      symbol: { type: 'string', required: true, description: '股票代码，如 600519.SH / AAPL.US / TSLA' },
       name: { type: 'string', description: '公司名' },
       sourcedAt: { type: 'string', description: '数据截止（最新报告期或行情日）' },
       dataset: {
@@ -1077,7 +1102,7 @@ export function apply(ctx, config = {}) {
       + ' 它不预测股价；它保证"先有规则再动手、每个动作留痕、规则不能被事后悄悄改掉"。',
     parameters: {
       action: ACTION_SCHEMA,
-      symbol: { type: 'string', description: '股票代码，如 600519.SH / 300750.SZ / 00700.HK' },
+      symbol: { type: 'string', description: '股票代码，如 600519.SH / 00700.HK / AAPL.US / TSLA' },
       name: { type: 'string', description: 'init 时的公司名' },
       capital: { type: 'number', description: 'init 时的账户总资金，用于仓位上限校验' },
       note: { type: 'string', description: 'init 时的备注' },
