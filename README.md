@@ -10,18 +10,22 @@
 
 | 能力 | 作用 |
 | --- | --- |
+| `stock_status` | **导航（只读）**：阶段、就绪度、硬拦；不传代码则列全部档案摘要 |
+| `stock_next` | **导航（只读）**：唯一主路径——该读哪本手册、建议调用序列、`chatPrompt`（面板与 Agent 共用） |
 | `stock_os` | 读写一只股票的档案：初始化、写结论、立宪法、定回撤预案、记交易、风控告警、追加流水、列档案、删档案、出报告 |
 | `stock_playbook` | 按阶段取出手册：`conductor` / `research` / `plan` / `entry` / `add` / `hold` / `reduce` / `exit` / `review` |
 | `stock_data` | 近五年财报数据集：`set` 写入、`check` 看还缺什么（会告诉你每个科目去报表哪一行拿）、`get` 取回 |
 | `stock_notes` | 8 章 132 节财报笔记当检索器：`search` 定位到具体节号与原句、`toc` 看目录、`emit` 生成带调研水印的 HTML |
 | `stock_charts` | 用数据集直接出图表概览 HTML：收入/利润/现金流/应收/存货/杠杆/ROE/PE/PB/股东回报/季度，只画有数据的图 |
 | `stock_report` | 把调研结论做成结论报告 HTML：报告头 / 结论带 / 五维打分 / 12 项排雷检查 / 图表 / 证据链 / 下一步。缺数据的项写"无法判断"，不猜 |
-| 侧栏「投资账本」 | 网页工作台：档案（可删除）、手册、**提示词**、流水、财报笔记；新建档案会开一个新对话并附上调研提示词 |
+| 侧栏「投资账本」 | **工作台**（下一步英雄区 + 就绪度）与资料页（手册 / 提示词 / 流水 / 笔记）；与 Agent 共用 guidance |
+
+涉及个股时先 `stock_status` / `stock_next`，再按返回的 `suggestedCalls` 执行写操作。
 
 调研有先后顺序，而且是硬性的：
 
 ```
-stock_data（近五年，check 通过）──▶ stock_notes（找依据）──▶ stock_charts（出图，可选）
+stock_next ──▶ stock_data（近五年，check 通过）──▶ stock_notes（找依据）──▶ stock_charts（出图，可选）
         ──▶ stock_os verdict ──▶ stock_report（结论报告）
 ```
 
@@ -67,9 +71,9 @@ git clone https://github.com/Flyingxin/dsh-stock-os.git
 
 ### 装完检查
 
-- 工具列表里出现 `stock_os`、`stock_playbook`、`stock_data`、`stock_notes`、`stock_charts`、`stock_report`；
+- 工具列表里出现 `stock_status`、`stock_next`、`stock_os`、`stock_playbook`、`stock_data`、`stock_notes`、`stock_charts`、`stock_report`；
 - 插件详情页能显示标题与图标（来自 `locale/` 与 `icon.svg`）；
-- 第一次调用 `stock_os` 加 `action: "list"`，返回"还没有档案"，并告诉你数据目录在哪里。
+- 第一次调用 `stock_status`（不传 symbol）或 `stock_os` 加 `action: "list"`，返回"还没有档案"，并告诉你数据目录在哪里。
 
 ---
 
@@ -105,7 +109,13 @@ git clone https://github.com/Flyingxin/dsh-stock-os.git
 帮我看看 600519.SH 现在能不能买
 ```
 
-第一步不是画图，也不是下结论，而是**把近五年财报数据摊开**：
+第一步不是画图，也不是下结论，而是**问导航**：
+
+```
+stock_next symbol=600519.SH
+```
+
+（没有档案时先 `stock_os init`，或让 agent 从 `stock_status` 列表现状。）`stock_next` 会给出当前阶段、就绪度缺口，以及建议调用序列。典型调研路径仍是**把近五年财报数据摊开**：
 
 ```
 stock_data action=set symbol=600519.SH dataset={ years:[...], series:{ revenue:[...], netProfit:[...], opCash:[...], ... } }
@@ -122,13 +132,14 @@ stock_report action=emit symbol=600519.SH
 
 接着立宪法（`plan` 阶段），至少写清：单只上限、分几批、首笔比例、止损线、止盈线、回撤预案、复盘周期。没有宪法，交易工具会直接拒绝执行——**这是设计，不是故障**。
 
-再往后：记首笔、记加仓、跑风控、减仓、清仓、复盘。每一步都可以只做一半就停，档案会记住停在哪。
+再往后：记首笔、记加仓、跑风控、减仓、清仓、复盘。每一步都可以只做一半就停，档案会记住停在哪；不确定时再调一次 `stock_next`。
 
 ### 面板怎么用
 
-- **档案**：左侧列表可搜、可删（点两次确认）；右侧详情有「结论报告」与「在对话中继续」——后者会跳回写下这份档案的那个会话，找不到才新开一个。
-- **新建档案**：填代码 → 打开新对话，并自动附上调研提示词；档案本身由 agent 在调研阶段 `stock_os init` 创建。
-- **提示词**：八个阶段各给几句能直接复制的话术，解决"这个阶段该说什么"的问题；离线版见 `docs/PROMPTS.md`。
+- **工作台**：左侧列表可搜、可删（悬停后点删，再点确认）；右侧顶部是「下一步」英雄区（与 `stock_next` 同源）、「就绪度」五格，以及「按此继续对话」（塞入同一条 `chatPrompt`）。
+- **开始调研**：展开列表底表单 → 填代码 → 新对话附调研提示词；档案由 agent 在调研阶段 `stock_os init` 创建。
+- **提示词 / 流水 / 手册**：带当前选中档案上下文（提示词自动替换 `{{symbol}}`；流水默认按标的过滤）。
+- 离线提示词见 `docs/PROMPTS.md`。
 
 ---
 
@@ -146,8 +157,9 @@ stock_report action=emit symbol=600519.SH
 
 ```
 index.js            Host：工具 + /stock-os API（零第三方依赖）
-client.js           Client：侧栏入口与主区页面
-lib/api.js          面板数据面（含 /api/data、/api/report、/api/delete、/api/prompts、/reports 静态页）
+client.js           Client：侧栏入口与主区页面（工作台）
+lib/api.js          面板数据面（含 /api/status、/api/next、/api/data、/api/report…）
+lib/guidance.js     Agent 与面板共用的阶段路由（status / next）
 lib/dataset.js      近五年数据集的存储与完整性检查（verdict 的准入门槛）
 lib/notes.js        132 节笔记的解析、检索、带水印导出
 lib/charts.js       数据集 → 图表概览 HTML（ECharts，缺数据不画）

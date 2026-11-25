@@ -14,9 +14,35 @@ window.__ModuleLoader__.load({
     const API = '/stock-os'
     const NOTES_URL = '/stock-os/fin-notes.html'
     const STAGE_ORDER = ['idea', 'research', 'plan', 'open', 'hold', 'closed']
+    const STAGE_LABEL = {
+      idea: '立项',
+      research: '买前调研',
+      plan: '立宪法',
+      open: '建仓',
+      hold: '持有',
+      closed: '已清仓',
+    }
     const PLAYBOOK_ORDER = [
       'conductor', 'research', 'plan', 'entry', 'add', 'hold', 'reduce', 'exit', 'review',
     ]
+    const PLAYBOOK_LABEL = {
+      conductor: '总纲',
+      research: '买前调研',
+      plan: '策略宪法',
+      entry: '建仓',
+      add: '加仓',
+      hold: '持有',
+      reduce: '减仓',
+      exit: '清仓',
+      review: '复盘',
+    }
+    const READY_LABEL = {
+      dataset: '五年数据',
+      verdict: '买前结论',
+      constitution: '策略宪法',
+      drawdownPlan: '回撤预案',
+      review: '复盘',
+    }
 
     // Use only semantic --dsw-alias-* tokens so light/dark/system themes apply.
     const css = {
@@ -35,57 +61,72 @@ window.__ModuleLoader__.load({
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: 12,
-        padding: '16px 20px 10px',
+        padding: '18px 22px 12px',
         borderBottom: '0.5px solid var(--dsw-alias-border-l1)',
       },
-      title: { margin: 0, fontSize: 16, fontWeight: 650, letterSpacing: '0.01em' },
+      title: { margin: 0, fontSize: 17, fontWeight: 650, letterSpacing: '0.01em' },
       sub: { margin: '4px 0 0', fontSize: 12, color: 'var(--dsw-alias-label-secondary)' },
-      tabs: { display: 'flex', gap: 6, padding: '10px 20px 0' },
+      tabs: {
+        display: 'flex',
+        gap: 2,
+        padding: '0 22px',
+        borderBottom: '0.5px solid var(--dsw-alias-border-l1)',
+      },
       tab: (active) => ({
         appearance: 'none',
-        border: '0.5px solid ' + (active
-          ? 'var(--dsw-alias-border-l2)'
-          : 'var(--dsw-alias-border-l1)'),
-        background: active
-          ? 'var(--dsw-alias-interactive-bg-active)'
-          : 'transparent',
-        color: 'var(--dsw-alias-label-primary)',
-        borderRadius: 8,
-        padding: '6px 12px',
-        fontSize: 12,
+        border: 'none',
+        borderBottom: active
+          ? '2px solid var(--dsw-alias-brand-primary)'
+          : '2px solid transparent',
+        background: 'transparent',
+        color: active
+          ? 'var(--dsw-alias-label-primary)'
+          : 'var(--dsw-alias-label-secondary)',
+        borderRadius: 0,
+        padding: '10px 14px 8px',
+        fontSize: 13,
+        fontWeight: active ? 600 : 500,
         cursor: 'pointer',
       }),
       body: {
         flex: 1,
         minHeight: 0,
         overflow: 'auto',
-        padding: '14px 20px 24px',
+        padding: '16px 22px 28px',
       },
       grid: {
         display: 'grid',
-        gridTemplateColumns: 'minmax(240px, 320px) minmax(0, 1fr)',
-        gap: 14,
+        gridTemplateColumns: 'minmax(220px, 300px) minmax(0, 1fr)',
+        gap: 16,
         alignItems: 'start',
       },
       card: {
         border: '0.5px solid var(--dsw-alias-border-l1)',
-        borderRadius: 12,
+        borderRadius: 10,
         background: 'var(--dsw-alias-bg-layer-1)',
-        padding: 12,
+        padding: 14,
         color: 'var(--dsw-alias-label-primary)',
       },
       cardActive: {
         borderColor: 'var(--dsw-alias-border-l2)',
         background: 'var(--dsw-alias-interactive-bg-active)',
       },
+      hero: {
+        border: '0.5px solid var(--dsw-alias-border-l2)',
+        borderRadius: 12,
+        background: 'var(--dsw-alias-bg-layer-1)',
+        padding: '16px 18px',
+        marginBottom: 14,
+      },
       muted: { color: 'var(--dsw-alias-label-secondary)', fontSize: 12 },
+      bodyText: { fontSize: 13, lineHeight: 1.55, color: 'var(--dsw-alias-label-primary)' },
       btn: {
         appearance: 'none',
         border: '0.5px solid var(--dsw-alias-border-l1)',
         background: 'var(--dsw-alias-bg-layer-2)',
         color: 'var(--dsw-alias-label-primary)',
         borderRadius: 8,
-        padding: '7px 11px',
+        padding: '7px 12px',
         fontSize: 12,
         cursor: 'pointer',
       },
@@ -95,10 +136,20 @@ window.__ModuleLoader__.load({
         background: 'var(--dsw-alias-brand-primary)',
         color: 'var(--dsw-alias-label-primary-foreground)',
         borderRadius: 8,
-        padding: '7px 11px',
-        fontSize: 12,
+        padding: '8px 14px',
+        fontSize: 13,
         cursor: 'pointer',
         fontWeight: 600,
+      },
+      btnGhost: {
+        appearance: 'none',
+        border: 'none',
+        background: 'transparent',
+        color: 'var(--dsw-alias-label-secondary)',
+        borderRadius: 6,
+        padding: '2px 8px',
+        fontSize: 11,
+        cursor: 'pointer',
       },
       input: {
         width: '100%',
@@ -108,15 +159,16 @@ window.__ModuleLoader__.load({
         color: 'var(--dsw-alias-label-primary)',
         borderRadius: 8,
         padding: '8px 10px',
-        fontSize: 12,
+        fontSize: 13,
       },
       chip: (tone) => ({
         display: 'inline-flex',
         alignItems: 'center',
-        borderRadius: 999,
+        borderRadius: 6,
         padding: '2px 8px',
         fontSize: 11,
         lineHeight: '16px',
+        fontWeight: 500,
         background: tone === 'good' ? 'color-mix(in srgb, var(--dsw-alias-state-success-primary) 16%, transparent)'
           : tone === 'warn' ? 'color-mix(in srgb, var(--dsw-alias-state-warn-primary) 16%, transparent)'
             : tone === 'bad' ? 'color-mix(in srgb, var(--dsw-alias-state-error-primary) 16%, transparent)'
@@ -136,23 +188,44 @@ window.__ModuleLoader__.load({
       stageRow: {
         display: 'flex',
         flexWrap: 'wrap',
-        gap: 6,
-        marginTop: 8,
+        alignItems: 'center',
+        gap: 4,
+        marginTop: 10,
       },
       stageDot: (on, current) => ({
         fontSize: 11,
-        padding: '3px 8px',
-        borderRadius: 999,
+        padding: '4px 9px',
+        borderRadius: 6,
         border: '0.5px solid ' + (current
           ? 'var(--dsw-alias-border-l2)'
-          : 'var(--dsw-alias-border-l1)'),
+          : 'transparent'),
         background: current
           ? 'var(--dsw-alias-interactive-bg-active)'
           : on
-            ? 'var(--dsw-alias-interactive-bg-hover)'
+            ? 'var(--dsw-alias-bg-layer-2)'
             : 'transparent',
         color: 'var(--dsw-alias-label-primary)',
-        opacity: on || current ? 1 : 0.45,
+        opacity: current ? 1 : on ? 0.72 : 0.38,
+        fontWeight: current ? 650 : 500,
+      }),
+      readyGrid: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+        gap: 6,
+        marginTop: 12,
+      },
+      readyCell: (ok, warn) => ({
+        border: '0.5px solid var(--dsw-alias-border-l1)',
+        borderRadius: 8,
+        padding: '8px 6px',
+        textAlign: 'center',
+        background: ok
+          ? 'color-mix(in srgb, var(--dsw-alias-state-success-primary) 10%, transparent)'
+          : warn
+            ? 'color-mix(in srgb, var(--dsw-alias-state-warn-primary) 10%, transparent)'
+            : 'var(--dsw-alias-bg-layer-2)',
+        fontSize: 11,
+        lineHeight: 1.35,
       }),
       danger: { color: 'var(--dsw-alias-state-error-primary)' },
       success: { color: 'var(--dsw-alias-state-success-primary)' },
@@ -161,6 +234,15 @@ window.__ModuleLoader__.load({
         fontSize: 13,
         lineHeight: 1.65,
         color: 'var(--dsw-alias-label-primary)',
+      },
+      empty: {
+        border: '0.5px dashed var(--dsw-alias-border-l1)',
+        borderRadius: 12,
+        padding: '28px 20px',
+        textAlign: 'center',
+        color: 'var(--dsw-alias-label-secondary)',
+        fontSize: 13,
+        lineHeight: 1.55,
       },
     }
 
@@ -364,16 +446,49 @@ window.__ModuleLoader__.load({
         STAGE_ORDER.map((s, i) => h('span', {
           key: s,
           style: css.stageDot(i <= idx, s === stage),
-        }, s)),
+          title: s,
+        }, STAGE_LABEL[s] || s)),
       )
+    }
+
+    function ReadinessRow({ readiness, onJump }) {
+      if (!readiness) return null
+      const cells = [
+        { key: 'dataset', ok: readiness.dataset },
+        { key: 'verdict', ok: readiness.verdict },
+        { key: 'constitution', ok: readiness.constitution },
+        { key: 'drawdownPlan', ok: readiness.drawdownPlan },
+        {
+          key: 'review',
+          ok: readiness.hasReview || (readiness.reviewDueAt && !readiness.reviewOverdue),
+          warn: readiness.reviewOverdue,
+        },
+      ]
+      return h('div', { style: css.readyGrid }, cells.map((c) => h('button', {
+        key: c.key,
+        type: 'button',
+        style: {
+          ...css.readyCell(c.ok, c.warn),
+          cursor: onJump ? 'pointer' : 'default',
+          color: 'inherit',
+        },
+        onClick: () => onJump && onJump(c.key),
+        title: READY_LABEL[c.key],
+      }, [
+        h('div', { key: 'm', style: { fontWeight: 650, marginBottom: 2 } },
+          c.warn ? '!' : (c.ok ? '✓' : '·')),
+        h('div', { key: 'l', style: css.muted }, READY_LABEL[c.key]),
+      ])))
     }
 
     function DossierList({ rows, selected, onSelect, onDelete, filter, onFilter }) {
       const q = (filter || '').trim().toUpperCase()
       const [confirming, setConfirming] = useState('')
+      const [hover, setHover] = useState('')
       const filtered = !q ? rows : rows.filter((r) =>
         String(r.symbol || '').includes(q)
         || String(r.name || '').toUpperCase().includes(q)
+        || String(STAGE_LABEL[r.stage] || r.stage || '').toUpperCase().includes(q)
         || String(r.stage || '').toUpperCase().includes(q))
 
       return h('div', null, [
@@ -385,12 +500,15 @@ window.__ModuleLoader__.load({
           onChange: (e) => onFilter(e.target.value),
         }),
         filtered.length === 0
-          ? h('div', { key: 'empty', style: css.muted }, '还没有档案。在下方输入代码开新对话，让 agent 从收集五年数据开始。')
+          ? h('div', { key: 'empty', style: css.empty },
+            '还没有档案。在下方开始调研，agent 会从五年数据写起。')
           : filtered.map((r) => h('div', {
             key: r.symbol,
             role: 'button',
             tabIndex: 0,
             onClick: () => onSelect(r.symbol),
+            onMouseEnter: () => setHover(r.symbol),
+            onMouseLeave: () => setHover(''),
             onKeyDown: (e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
@@ -404,6 +522,7 @@ window.__ModuleLoader__.load({
               textAlign: 'left',
               cursor: 'pointer',
               marginBottom: 8,
+              padding: '12px 12px 10px',
             },
           }, [
             h('div', {
@@ -411,30 +530,30 @@ window.__ModuleLoader__.load({
               style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 4 },
             }, [
               h('strong', { key: 'sym', style: { fontSize: 13 } }, r.symbol),
-              h('span', { key: 'acts', style: { display: 'flex', alignItems: 'center', gap: 6 } }, [
+              h('span', { key: 'acts', style: { display: 'flex', alignItems: 'center', gap: 4 } }, [
                 h('span', { key: 'v', style: css.chip(verdictTone(r.verdict)) }, r.verdict || '未出'),
-                h('button', {
-                  key: 'del',
-                  type: 'button',
-                  title: confirming === r.symbol ? '再点一次确认删除' : '删除这份档案',
-                  onClick: (e) => {
-                    e.stopPropagation()
-                    if (confirming === r.symbol) {
-                      setConfirming('')
-                      if (onDelete) onDelete(r.symbol)
-                    } else {
-                      setConfirming(r.symbol)
-                    }
-                  },
-                  style: {
-                    ...css.btn,
-                    padding: '1px 8px',
-                    fontSize: 11,
-                    ...(confirming === r.symbol
-                      ? { color: 'var(--dsw-alias-state-danger-primary)', borderColor: 'var(--dsw-alias-state-danger-primary)' }
-                      : { color: 'var(--dsw-alias-label-secondary)' }),
-                  },
-                }, confirming === r.symbol ? '确认删除' : '删除'),
+                (hover === r.symbol || confirming === r.symbol || selected === r.symbol)
+                  ? h('button', {
+                    key: 'del',
+                    type: 'button',
+                    title: confirming === r.symbol ? '再点一次确认删除' : '删除这份档案',
+                    onClick: (e) => {
+                      e.stopPropagation()
+                      if (confirming === r.symbol) {
+                        setConfirming('')
+                        if (onDelete) onDelete(r.symbol)
+                      } else {
+                        setConfirming(r.symbol)
+                      }
+                    },
+                    style: {
+                      ...css.btnGhost,
+                      ...(confirming === r.symbol
+                        ? { color: 'var(--dsw-alias-state-error-primary)', fontWeight: 600 }
+                        : null),
+                    },
+                  }, confirming === r.symbol ? '确认删' : '删')
+                  : null,
               ]),
             ]),
             h('div', { key: 'name', style: { ...css.muted, marginBottom: 6 } }, r.name || '未命名'),
@@ -442,7 +561,7 @@ window.__ModuleLoader__.load({
               key: 'meta',
               style: { display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11 },
             }, [
-              h('span', { key: 'st' }, '阶段 ' + r.stage),
+              h('span', { key: 'st', style: { fontWeight: 550 } }, STAGE_LABEL[r.stage] || r.stage),
               h('span', { key: 'pos', style: css.muted },
                 r.qty > 0 ? (r.qty + ' 股 @ ' + r.avgCost) : '空仓'),
             ]),
@@ -481,8 +600,8 @@ window.__ModuleLoader__.load({
         const sym = symbol.trim().toUpperCase()
         const who = sym ? sym + (name.trim() ? '（' + name.trim() + '）' : '') : '一只股票'
         const prompt = sym
-          ? '调研 ' + who + '。先 stock_data 把近五年财报数据（营收 / 归母净利 / 经营现金流等）按年份写进去，用 action=check 确认通过；再用 stock_notes 检索判断依据、stock_charts 看趋势；然后按 stock_playbook stage=research 的清单给结论，用 stock_os verdict 写入。数据不齐就不要写结论。'
-          : '我想开始调研一只股票：先问我代码、公司名、账户资金规模和关注点，然后按 stock_playbook stage=research 的流程，从 stock_data 收集近五年财报数据开始。'
+          ? '调研 ' + who + '。先 stock_os init（若尚无档案），再 stock_next 看下一步；从 stock_data 写入近五年财报并用 check 确认通过，再用 stock_notes / stock_charts，最后按 research 手册写 stock_os verdict。数据不齐就不要写结论。'
+          : '我想开始调研一只股票：先问我代码、公司名、账户资金规模和关注点，然后 stock_status / stock_next，从 stock_data 收集近五年财报数据开始。'
         setError('')
         try {
           const nav = workspaceNav(ctx)
@@ -528,8 +647,9 @@ window.__ModuleLoader__.load({
       ])
     }
 
-    function DetailPanel({ symbol, onContinue }) {
+    function DetailPanel({ symbol, onContinue, onOpenPlaybook, onOpenPrompts }) {
       const [data, setData] = useState(null)
+      const [guidance, setGuidance] = useState(null)
       const [error, setError] = useState('')
       const [price, setPrice] = useState('')
       const [guards, setGuards] = useState(null)
@@ -537,16 +657,29 @@ window.__ModuleLoader__.load({
       const [report, setReport] = useState(null)
       const [reportErr, setReportErr] = useState('')
       const [preview, setPreview] = useState('')
+      const [copied, setCopied] = useState(false)
+      const [rulesOpen, setRulesOpen] = useState(false)
+      const holdingStage = data && data.dossier
+        && (data.dossier.stage === 'hold' || data.dossier.stage === 'open')
 
       const load = useCallback(async () => {
         if (!symbol) return
         setError('')
+        setGuards(null)
+        setReport(null)
         try {
-          const result = await api('/api/dossier?symbol=' + encodeURIComponent(symbol))
-          setData(result)
+          const [dossier, next] = await Promise.all([
+            api('/api/dossier?symbol=' + encodeURIComponent(symbol)),
+            api('/api/next?symbol=' + encodeURIComponent(symbol)).catch(() => null),
+          ])
+          setData(dossier)
+          setGuidance(next || (dossier.guidance
+            ? { ...dossier, next: dossier.guidance.next, readiness: dossier.guidance.readiness, blockers: dossier.guidance.blockers, chatPrompt: dossier.guidance.next && dossier.guidance.next.chatPrompt }
+            : null))
         } catch (err) {
           setError(err.message || String(err))
           setData(null)
+          setGuidance(null)
         }
       }, [symbol])
 
@@ -558,6 +691,11 @@ window.__ModuleLoader__.load({
           const q = new URLSearchParams({ symbol })
           if (price !== '') q.set('price', price)
           setGuards(await api('/api/guards?' + q.toString()))
+          if (price !== '') {
+            const next = await api('/api/next?symbol=' + encodeURIComponent(symbol)
+              + '&price=' + encodeURIComponent(price)).catch(() => null)
+            if (next) setGuidance(next)
+          }
         } catch (err) {
           setGuards({ ok: false, violations: [err.message || String(err)] })
         } finally {
@@ -582,8 +720,43 @@ window.__ModuleLoader__.load({
         }
       }
 
+      function chatPromptText() {
+        const n = guidance && guidance.next
+        if (n && n.chatPrompt) return n.chatPrompt
+        const d = (data && data.dossier) || {}
+        return '打开 ' + symbol + (d.name ? '（' + d.name + '）' : '')
+          + '：先 stock_next，再按返回的手册与建议调用推进。'
+      }
+
+      function copyPrompt() {
+        try {
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(chatPromptText())
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1500)
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      function jumpReady(key) {
+        const map = {
+          dataset: 'research',
+          verdict: 'research',
+          constitution: 'plan',
+          drawdownPlan: 'plan',
+          review: 'review',
+        }
+        if (onOpenPlaybook) onOpenPlaybook(map[key] || 'conductor')
+      }
+
       if (!symbol) {
-        return h('div', { style: { ...css.card, ...css.muted } }, '从左侧选择一只股票，或新建档案。')
+        return h('div', { style: css.empty }, [
+          h('div', { key: 't', style: { fontWeight: 600, marginBottom: 6, color: 'var(--dsw-alias-label-primary)' } },
+            '选择一只股票'),
+          h('div', { key: 'd' }, '从左侧点开档案，或开始调研。面板只看状态；买卖与改规则仍在对话里完成。'),
+        ])
       }
       if (error) return h('div', { style: { ...css.card, ...css.danger } }, error)
       if (!data) return h('div', { style: { ...css.card, ...css.muted } }, '加载中…')
@@ -592,31 +765,124 @@ window.__ModuleLoader__.load({
       const c = data.constitution
       const v = data.verdict
       const plans = data.plans
+      const next = (guidance && guidance.next) || (data.guidance && data.guidance.next) || null
+      const readiness = (guidance && guidance.readiness)
+        || (data.guidance && data.guidance.readiness)
+        || null
+      const blockers = (guidance && guidance.blockers)
+        || (data.guidance && data.guidance.blockers)
+        || []
+
+      const guardsBlock = h(Section, {
+        key: 'guards',
+        title: '风控检查',
+        right: holdingStage
+          ? h('span', { style: css.chip('warn') }, '持有期优先')
+          : null,
+      }, [
+        h('div', {
+          key: 'form',
+          style: { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 },
+        }, [
+          h('input', {
+            key: 'price',
+            style: { ...css.input, maxWidth: 160 },
+            type: 'number',
+            step: 'any',
+            placeholder: '现价（可选）',
+            value: price,
+            onChange: (e) => setPrice(e.target.value),
+          }),
+          h('button', {
+            key: 'run',
+            type: 'button',
+            style: css.btn,
+            disabled: busy,
+            onClick: runGuards,
+          }, busy ? '检查中…' : '跑规则'),
+        ]),
+        guards
+          ? ((guards.violations || []).length
+            ? h('ul', {
+              key: 'v',
+              style: { margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.55, ...css.warn },
+            }, guards.violations.map((x, i) => h('li', { key: i }, x)))
+            : h('div', { key: 'ok', style: { fontSize: 13, ...css.success } }, '规则检查通过'))
+          : h('div', { key: 'hint', style: css.muted }, '动作前先让规则说话。'),
+      ])
 
       return h(Fragment, null, [
-        h(Section, {
-          key: 'overview',
-          title: (d.symbol || symbol) + (d.name ? ' · ' + d.name : ''),
-          right: h('span', { style: { display: 'flex', gap: 6 } }, [
-            h('button', {
-              key: 'report',
-              type: 'button',
-              style: css.btn,
-              disabled: busy,
-              onClick: runReport,
-            }, busy ? '生成中…' : '结论报告'),
-            h('button', {
-              key: 'continue',
-              type: 'button',
-              style: css.btnPrimary,
-              title: d.sessionId
-                ? '跳到写下这份档案的会话（' + String(d.sessionId).slice(0, 8) + '…）'
-                : '这份档案没有记录来源会话，会新开一个对话',
-              onClick: () => onContinue && onContinue(d),
-            }, '在对话中继续'),
+        h('div', { key: 'hero', style: css.hero }, [
+          h('div', {
+            key: 'head',
+            style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
+          }, [
+            h('div', { key: 'left' }, [
+              h('div', { key: 'title', style: { fontSize: 16, fontWeight: 650 } },
+                (d.symbol || symbol) + (d.name ? ' · ' + d.name : '')),
+              h('div', {
+                key: 'meta',
+                style: { display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+              }, [
+                h('span', { key: 'st', style: css.chip('neutral') },
+                  STAGE_LABEL[d.stage] || d.stage),
+                h('span', { key: 'v', style: css.chip(verdictTone(d.verdict)) },
+                  '结论 ' + (d.verdict || '未出')),
+                h('span', { key: 'pos', style: css.chip(d.qty > 0 ? 'good' : 'neutral') },
+                  d.qty > 0 ? ('持仓 ' + d.qty + ' @ ' + d.avgCost) : '空仓'),
+                d.reviewDueAt
+                  ? h('span', { key: 'due', style: css.chip('warn') },
+                    '复盘 ' + String(d.reviewDueAt).slice(0, 10))
+                  : null,
+              ]),
+            ]),
+            h('div', { key: 'acts', style: { display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' } }, [
+              h('button', {
+                key: 'report',
+                type: 'button',
+                style: css.btn,
+                disabled: busy,
+                onClick: runReport,
+              }, busy ? '生成中…' : '结论报告'),
+              h('button', {
+                key: 'copy',
+                type: 'button',
+                style: css.btn,
+                onClick: copyPrompt,
+              }, copied ? '已复制' : '复制提示词'),
+              h('button', {
+                key: 'continue',
+                type: 'button',
+                style: css.btnPrimary,
+                title: d.sessionId
+                  ? '跳到写下这份档案的会话'
+                  : '新开对话并附上下一步提示词',
+                onClick: () => onContinue && onContinue(d, chatPromptText()),
+              }, '按此继续对话'),
+            ]),
           ]),
-        }, [
           h(StagePipeline, { key: 'pipe', stage: d.stage }),
+          next
+            ? h('div', {
+              key: 'next',
+              style: {
+                marginTop: 14,
+                paddingTop: 12,
+                borderTop: '0.5px solid var(--dsw-alias-border-l1)',
+              },
+            }, [
+              h('div', { key: 'eyebrow', style: { ...css.muted, marginBottom: 4 } },
+                '下一步' + (next.playbook ? ' · 手册 ' + (PLAYBOOK_LABEL[next.playbook] || next.playbook) : '')),
+              h('div', { key: 'nt', style: { fontSize: 15, fontWeight: 650, marginBottom: 4 } }, next.title),
+              h('div', { key: 'why', style: css.bodyText }, next.why || ''),
+              blockers.length
+                ? h('ul', {
+                  key: 'blk',
+                  style: { margin: '8px 0 0', paddingLeft: 18, fontSize: 12, lineHeight: 1.5, ...css.warn },
+                }, blockers.map((b, i) => h('li', { key: i }, b.message || b)))
+                : null,
+            ])
+            : null,
           reportErr ? h('div', { key: 'rerr', style: { ...css.danger, marginTop: 8, fontSize: 12 } }, reportErr) : null,
           report && report.url
             ? h('div', { key: 'rlink', style: { marginTop: 8, fontSize: 12 } }, [
@@ -630,30 +896,22 @@ window.__ModuleLoader__.load({
                 '结论 ' + (report.status || '—') + ' · 异常 ' + (report.failed == null ? '—' : report.failed) + ' 项'),
             ])
             : null,
-          h('div', {
-            key: 'meta',
-            style: { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10, fontSize: 12 },
-          }, [
-            h('span', { key: 'v', style: css.chip(verdictTone(d.verdict)) }, '结论 ' + (d.verdict || '未出')),
-            h('span', { key: 'pos', style: css.chip(d.qty > 0 ? 'good' : 'neutral') },
-              d.qty > 0 ? ('持仓 ' + d.qty + ' @ ' + d.avgCost) : '空仓'),
-            d.reviewDueAt
-              ? h('span', { key: 'due', style: css.chip('warn') }, '复盘 ' + String(d.reviewDueAt).slice(0, 10))
-              : null,
-          ]),
         ]),
 
-        h(Section, { key: 'next', title: '下一步' },
-          (data.nextActions || []).length
-            ? h('ul', {
-              style: { margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.6 },
-            }, data.nextActions.map((n, i) => h('li', { key: i }, n)))
-            : h('div', { style: css.muted }, '暂无建议动作'),
-        ),
+        readiness
+          ? h('div', { key: 'ready', style: { ...css.card, marginBottom: 14 } }, [
+            h('div', { key: 'h', style: { fontSize: 13, fontWeight: 600, marginBottom: 4 } }, '就绪度'),
+            h('div', { key: 'hint', style: { ...css.muted, marginBottom: 4 } },
+              '点缺失项可跳到对应手册'),
+            h(ReadinessRow, { key: 'row', readiness, onJump: jumpReady }),
+          ])
+          : null,
+
+        holdingStage ? guardsBlock : null,
 
         h(Section, { key: 'verdict', title: '买前结论' },
           v
-            ? h('div', { style: { fontSize: 12, lineHeight: 1.55 } }, [
+            ? h('div', { style: css.bodyText }, [
               h('div', { key: 's', style: { marginBottom: 6 } }, [
                 h('span', { style: css.chip(verdictTone(v.status)) }, v.status),
                 v.sourcedAt ? h('span', { style: { ...css.muted, marginLeft: 8 } }, '数据截止 ' + v.sourcedAt) : null,
@@ -668,85 +926,89 @@ window.__ModuleLoader__.load({
                   '异常跟踪：' + v.anomalies.join('；'))
                 : null,
             ])
-            : h('div', { style: css.muted }, '尚未写入 verdict。先按 research 手册调研。'),
+            : h('div', { style: css.muted }, '尚未写入结论。点上方「按此继续对话」从调研开始。'),
         ),
 
-        h(Section, { key: 'constitution', title: '策略宪法' },
-          c
-            ? h('div', {
-              style: {
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-                gap: 8,
-                fontSize: 12,
-              },
-            }, [
-              ['仓位上限', c.maxPositionPct + '%'],
-              ['分批', c.tranches],
-              ['首笔', c.firstTranchePct + '%'],
-              ['止损', c.stopLossPct + '%'],
-              ['最大回撤', c.maxDrawdownPct + '%'],
-              ['止盈', c.takeProfitPct + '%'],
-              ['复盘周期', c.reviewCadenceDays + ' 天'],
-            ].map(([k, val]) => h('div', {
-              key: k,
-              style: {
-                border: '0.5px solid var(--dsw-alias-border-l1)',
-                borderRadius: 8,
-                padding: '8px 10px',
-                background: 'var(--dsw-alias-bg-layer-2)',
-              },
-            }, [
-              h('div', { key: 'k', style: css.muted }, k),
-              h('div', { key: 'v', style: { marginTop: 2, fontWeight: 600 } }, String(val)),
-            ])).concat([
-              h('div', { key: 'add', style: { gridColumn: '1 / -1', ...css.muted } }, '加仓：' + (c.addRules || '—')),
-              h('div', { key: 'reduce', style: { gridColumn: '1 / -1', ...css.muted } }, '减仓：' + (c.reduceRules || '—')),
-              h('div', { key: 'exit', style: { gridColumn: '1 / -1', ...css.muted } },
-                '退出信号：' + ((c.exitSignals || []).join('；') || '—')),
-              h('div', { key: 'inv', style: { gridColumn: '1 / -1', ...css.muted } },
-                '失效条件：' + ((c.invalidations || []).join('；') || '—')),
-            ]))
-            : h('div', { style: css.muted }, '尚未立宪法。没有宪法，交易工具会拒绝建仓。'),
-        ),
-
-        h(Section, { key: 'plans', title: '回撤预案' },
-          plans && plans.drawdownPlan
-            ? h('div', { style: { fontSize: 12, lineHeight: 1.55 } }, plans.drawdownPlan)
-            : h('div', { style: css.muted }, '尚未写回撤预案。'),
-        ),
-
-        h(Section, { key: 'guards', title: '风控检查 (guards)' }, [
-          h('div', {
-            key: 'form',
-            style: { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 },
-          }, [
-            h('input', {
-              key: 'price',
-              style: { ...css.input, maxWidth: 160 },
-              type: 'number',
-              step: 'any',
-              placeholder: '现价（可选）',
-              value: price,
-              onChange: (e) => setPrice(e.target.value),
-            }),
-            h('button', {
-              key: 'run',
+        h(Section, {
+          key: 'constitution',
+          title: '策略宪法',
+          right: c
+            ? h('button', {
               type: 'button',
-              style: css.btn,
-              disabled: busy,
-              onClick: runGuards,
-            }, busy ? '检查中…' : '跑规则'),
-          ]),
-          guards
-            ? ((guards.violations || []).length
-              ? h('ul', {
-                key: 'v',
-                style: { margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.55, ...css.warn },
-              }, guards.violations.map((x, i) => h('li', { key: i }, x)))
-              : h('div', { key: 'ok', style: { fontSize: 12, ...css.success } }, '规则检查通过'))
-            : h('div', { key: 'hint', style: css.muted }, '动作前先让规则说话。'),
-        ]),
+              style: css.btnGhost,
+              onClick: () => setRulesOpen(!rulesOpen),
+            }, rulesOpen ? '收起规则' : '展开规则')
+            : null,
+        },
+          c
+            ? h('div', null, [
+              h('div', {
+                key: 'nums',
+                style: {
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(88px, 1fr))',
+                  gap: 0,
+                  borderTop: '0.5px solid var(--dsw-alias-border-l1)',
+                  borderLeft: '0.5px solid var(--dsw-alias-border-l1)',
+                  fontSize: 12,
+                },
+              }, [
+                ['仓位上限', c.maxPositionPct + '%'],
+                ['分批', c.tranches],
+                ['首笔', c.firstTranchePct + '%'],
+                ['止损', c.stopLossPct + '%'],
+                ['最大回撤', c.maxDrawdownPct + '%'],
+                ['止盈', c.takeProfitPct + '%'],
+                ['复盘', c.reviewCadenceDays + ' 天'],
+              ].map(([k, val]) => h('div', {
+                key: k,
+                style: {
+                  padding: '10px 10px',
+                  borderRight: '0.5px solid var(--dsw-alias-border-l1)',
+                  borderBottom: '0.5px solid var(--dsw-alias-border-l1)',
+                },
+              }, [
+                h('div', { key: 'k', style: css.muted }, k),
+                h('div', { key: 'v', style: { marginTop: 2, fontWeight: 650, fontSize: 13 } }, String(val)),
+              ]))),
+              rulesOpen
+                ? h('div', { key: 'rules', style: { marginTop: 10, ...css.muted, lineHeight: 1.55 } }, [
+                  h('div', { key: 'add' }, '加仓：' + (c.addRules || '—')),
+                  h('div', { key: 'reduce', style: { marginTop: 4 } }, '减仓：' + (c.reduceRules || '—')),
+                  h('div', { key: 'exit', style: { marginTop: 4 } },
+                    '退出：' + ((c.exitSignals || []).join('；') || '—')),
+                  h('div', { key: 'inv', style: { marginTop: 4 } },
+                    '失效：' + ((c.invalidations || []).join('；') || '—')),
+                ])
+                : null,
+              plans && plans.drawdownPlan
+                ? h('div', {
+                  key: 'dd',
+                  style: { marginTop: 10, fontSize: 13, lineHeight: 1.55 },
+                }, [
+                  h('div', { key: 'l', style: { ...css.muted, marginBottom: 4 } }, '回撤预案'),
+                  h('div', { key: 't' }, plans.drawdownPlan),
+                ])
+                : h('div', { key: 'nodd', style: { ...css.muted, marginTop: 8 } }, '尚未写回撤预案。'),
+            ])
+            : h('div', { style: css.muted }, '尚未立宪法。没有宪法，交易会被拒绝。'),
+        ),
+
+        !holdingStage ? guardsBlock : null,
+
+        onOpenPrompts
+          ? h('div', {
+            key: 'more',
+            style: { ...css.muted, marginTop: 4, marginBottom: 8 },
+          }, [
+            '需要话术模板？',
+            h('button', {
+              type: 'button',
+              style: { ...css.btnGhost, color: 'var(--dsw-alias-brand-primary)' },
+              onClick: onOpenPrompts,
+            }, '打开提示词'),
+          ])
+          : null,
 
         preview ? h('div', {
           key: 'preview',
@@ -754,7 +1016,7 @@ window.__ModuleLoader__.load({
             position: 'fixed',
             inset: 0,
             zIndex: 80,
-            background: 'rgba(15, 23, 42, 0.45)',
+            background: 'color-mix(in srgb, var(--dsw-alias-label-primary) 45%, transparent)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -808,25 +1070,33 @@ window.__ModuleLoader__.load({
               key: 'f',
               src: preview,
               title: '结论报告',
-              style: { flex: 1, width: '100%', border: 0, background: '#fff' },
+              style: {
+                flex: 1,
+                width: '100%',
+                border: 0,
+                background: 'var(--dsw-alias-bg-base)',
+              },
             }),
           ]),
         ]) : null,
       ])
     }
 
-    function PlaybooksView() {
+    function PlaybooksView({ initialStage }) {
       const [stages, setStages] = useState([])
-      const [active, setActive] = useState('conductor')
+      const [active, setActive] = useState(initialStage || 'conductor')
       const [text, setText] = useState('')
       const [mode, setMode] = useState('preview') // preview | source
       const [error, setError] = useState('')
 
       useEffect(() => {
+        if (initialStage) setActive(initialStage)
+      }, [initialStage])
+
+      useEffect(() => {
         api('/api/playbooks')
           .then((d) => {
             setStages(d.stages || [])
-            if (d.stages && d.stages[0]) setActive(d.stages[0].stage)
           })
           .catch((err) => setError(err.message || String(err)))
       }, [])
@@ -842,6 +1112,18 @@ window.__ModuleLoader__.load({
       const ordered = PLAYBOOK_ORDER
         .map((s) => (stages.find((x) => x.stage === s) || { stage: s, title: s }))
 
+      const modeBtn = (id, label) => h('button', {
+        key: id,
+        type: 'button',
+        style: {
+          ...css.btn,
+          ...(mode === id
+            ? { borderColor: 'var(--dsw-alias-border-l2)', fontWeight: 600 }
+            : null),
+        },
+        onClick: () => setMode(id),
+      }, label)
+
       return h('div', { style: css.grid }, [
         h('style', { key: 'md-css' }, MD_CSS),
         h('div', { key: 'nav' }, ordered.map((s) => h('button', {
@@ -856,9 +1138,11 @@ window.__ModuleLoader__.load({
             cursor: 'pointer',
             marginBottom: 8,
             color: 'inherit',
+            padding: '10px 12px',
           },
         }, [
-          h('div', { key: 'id', style: { fontSize: 12, fontWeight: 650 } }, s.stage),
+          h('div', { key: 'id', style: { fontSize: 13, fontWeight: 650 } },
+            PLAYBOOK_LABEL[s.stage] || s.stage),
           h('div', { key: 't', style: { ...css.muted, marginTop: 4 } }, s.title),
         ]))),
         h('div', { key: 'body', style: css.card }, [
@@ -870,20 +1154,7 @@ window.__ModuleLoader__.load({
               gap: 6,
               marginBottom: 10,
             },
-          }, [
-            h('button', {
-              key: 'preview',
-              type: 'button',
-              style: css.tab(mode === 'preview'),
-              onClick: () => setMode('preview'),
-            }, '预览'),
-            h('button', {
-              key: 'source',
-              type: 'button',
-              style: css.tab(mode === 'source'),
-              onClick: () => setMode('source'),
-            }, '源码'),
-          ]),
+          }, [modeBtn('preview', '预览'), modeBtn('source', '源码')]),
           error ? h('div', { key: 'e', style: css.danger }, error) : null,
           !text
             ? h('div', { key: 'loading', style: css.muted }, '加载中…')
@@ -899,7 +1170,7 @@ window.__ModuleLoader__.load({
       ])
     }
 
-    function JournalView({ symbolFilter }) {
+    function JournalView({ symbolFilter, onClearFilter, onGoWorkspace }) {
       const [rows, setRows] = useState([])
       const [error, setError] = useState('')
       const [text, setText] = useState('')
@@ -942,6 +1213,38 @@ window.__ModuleLoader__.load({
       }
 
       return h('div', null, [
+        h('div', {
+          key: 'banner',
+          style: {
+            ...css.card,
+            marginBottom: 12,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 12px',
+          },
+        }, [
+          h('div', { key: 'l', style: { fontSize: 13 } },
+            symbolFilter
+              ? ('正在查看 ' + symbolFilter + ' 的流水')
+              : '正在查看全部流水（工作台未选中档案）'),
+          h('div', { key: 'r', style: { display: 'flex', gap: 6 } }, [
+            symbolFilter
+              ? h('button', {
+                key: 'all',
+                type: 'button',
+                style: css.btn,
+                onClick: () => onClearFilter && onClearFilter(),
+              }, '看全部')
+              : h('button', {
+                key: 'ws',
+                type: 'button',
+                style: css.btn,
+                onClick: () => onGoWorkspace && onGoWorkspace(),
+              }, '去工作台选档案'),
+          ]),
+        ]),
         h('form', {
           key: 'form',
           onSubmit: appendNote,
@@ -952,7 +1255,7 @@ window.__ModuleLoader__.load({
             style: css.input,
             placeholder: symbolFilter
               ? ('给 ' + symbolFilter + ' 追加一条流水备注')
-              : '追加一条流水备注（可选关联当前档案）',
+              : '追加一条流水备注（未选档案则不绑定标的）',
             value: text,
             onChange: (e) => setText(e.target.value),
           }),
@@ -965,7 +1268,7 @@ window.__ModuleLoader__.load({
         ]),
         error ? h('div', { key: 'e', style: { ...css.danger, marginBottom: 8 } }, error) : null,
         rows.length === 0
-          ? h('div', { key: 'empty', style: { ...css.card, ...css.muted } }, '还没有流水。')
+          ? h('div', { key: 'empty', style: css.empty }, '还没有流水。')
           : rows.map((r, i) => h('div', {
             key: String(r.ts) + '-' + i,
             style: { ...css.card, marginBottom: 8 },
@@ -974,15 +1277,26 @@ window.__ModuleLoader__.load({
               key: 'top',
               style: { display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4 },
             }, [
-              h('span', { key: 'a', style: { fontSize: 12, fontWeight: 650 } },
+              h('span', { key: 'a', style: { fontSize: 13, fontWeight: 650 } },
                 [r.action, r.trade, r.symbol].filter(Boolean).join(' · ') || 'note'),
               h('span', { key: 't', style: css.muted },
                 r.ts ? String(r.ts).replace('T', ' ').slice(0, 19) : ''),
             ]),
-            h('div', { key: 'reason', style: { fontSize: 12, lineHeight: 1.5 } },
+            h('div', { key: 'reason', style: css.bodyText },
               r.reason || r.text || JSON.stringify(r)),
           ])),
       ])
+    }
+
+    function fillPromptTemplate(text, { symbol, name, price, avgCost, qty }) {
+      const namePart = name ? '（' + name + '）' : ''
+      return String(text || '')
+        .replace(/\{\{symbol\}\}/g, symbol || '代码')
+        .replace(/\{\{namePart\}\}/g, namePart)
+        .replace(/\{\{name\}\}/g, name || '')
+        .replace(/\{\{price\}\}/g, price != null && price !== '' ? String(price) : '现价')
+        .replace(/\{\{avgCost\}\}/g, avgCost != null ? String(avgCost) : '成本')
+        .replace(/\{\{qty\}\}/g, qty != null ? String(qty) : '股数')
     }
 
     function LedgerPage({ ctx }) {
@@ -993,7 +1307,10 @@ window.__ModuleLoader__.load({
       const [selected, setSelected] = useState('')
       const [filter, setFilter] = useState('')
       const [error, setError] = useState('')
+      const [playbookStage, setPlaybookStage] = useState('conductor')
+      const [researchOpen, setResearchOpen] = useState(false)
       const t = ctx.locale.bind(NS)
+      const selectedRow = rows.find((r) => r.symbol === selected) || null
 
       const refresh = useCallback(async () => {
         try {
@@ -1010,11 +1327,13 @@ window.__ModuleLoader__.load({
 
       useEffect(() => { refresh() }, [])
 
-      function continueInChat(dossier) {
+      function continueInChat(dossier, promptOverride) {
         const symbol = dossier && dossier.symbol
         if (!symbol) return
-        const prompt = '打开 ' + symbol + (dossier.name ? '（' + dossier.name + '）' : '')
-          + ' 的投资决策账本：先 stock_os action=get，再按当前阶段读 stock_playbook，告诉我下一步该做什么。'
+        const prompt = promptOverride || (
+          '打开 ' + symbol + (dossier.name ? '（' + dossier.name + '）' : '')
+          + '：先 stock_next，再按返回的手册与建议调用推进。'
+        )
         const nav = workspaceNav(ctx)
         if (dossier.sessionId && nav && typeof nav.openSession === 'function') {
           try {
@@ -1052,6 +1371,11 @@ window.__ModuleLoader__.load({
         }
       }
 
+      function openPlaybook(stage) {
+        setPlaybookStage(stage || 'conductor')
+        setTab('playbooks')
+      }
+
       return h('div', { style: css.page }, [
         h('header', { key: 'header', style: css.header }, [
           h('div', { key: 'left' }, [
@@ -1059,7 +1383,10 @@ window.__ModuleLoader__.load({
             h('p', { key: 's', style: css.sub },
               t('subtitle') + (dir ? ' · ' + dir : '')),
           ]),
-          h('div', { key: 'right', style: { display: 'flex', gap: 8 } }, [
+          h('div', { key: 'right', style: { display: 'flex', gap: 8, alignItems: 'center' } }, [
+            selected
+              ? h('span', { key: 'cur', style: css.chip('neutral') }, '当前 ' + selected)
+              : null,
             h('span', { key: 'stat', style: css.chip('neutral') },
               (rows.length || 0) + ' 档案 · ' + (stats.holding || 0) + ' 持仓'),
             h('button', {
@@ -1104,28 +1431,57 @@ window.__ModuleLoader__.load({
                 onFilter: setFilter,
               }),
               h('div', { key: 'init', style: { ...css.card, marginTop: 8 } }, [
-                h('div', { key: 'h', style: { fontSize: 13, fontWeight: 600, marginBottom: 8 } },
-                  t('newDossier')),
-                h(StartResearch, {
-                  key: 'form',
-                  ctx,
-                }),
+                h('button', {
+                  key: 'toggle',
+                  type: 'button',
+                  style: {
+                    ...css.btnGhost,
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '4px 0',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: 'var(--dsw-alias-label-primary)',
+                  },
+                  onClick: () => setResearchOpen(!researchOpen),
+                }, (researchOpen ? '▾ ' : '▸ ') + t('newDossier')),
+                researchOpen
+                  ? h(StartResearch, { key: 'form', ctx })
+                  : h('div', { key: 'hint', style: { ...css.muted, marginTop: 4 } },
+                    '填代码后开新对话，从五年数据开始。'),
               ]),
             ]),
             h('div', { key: 'right' }, h(DetailPanel, {
               symbol: selected,
               onContinue: continueInChat,
+              onOpenPlaybook: openPlaybook,
+              onOpenPrompts: () => setTab('prompts'),
             })),
           ]) : null,
-          tab === 'playbooks' ? h(PlaybooksView, { key: 'pb' }) : null,
-          tab === 'prompts' ? h(PromptsView, { key: 'pr' }) : null,
-          tab === 'journal' ? h(JournalView, { key: 'j', symbolFilter: selected || '' }) : null,
+          tab === 'playbooks' ? h(PlaybooksView, {
+            key: 'pb-' + playbookStage,
+            initialStage: playbookStage,
+          }) : null,
+          tab === 'prompts' ? h(PromptsView, {
+            key: 'pr',
+            symbol: selected,
+            name: selectedRow && selectedRow.name,
+            qty: selectedRow && selectedRow.qty,
+            avgCost: selectedRow && selectedRow.avgCost,
+            onGoWorkspace: () => setTab('dossiers'),
+          }) : null,
+          tab === 'journal' ? h(JournalView, {
+            key: 'j',
+            symbolFilter: selected || '',
+            onClearFilter: () => setSelected(''),
+            onGoWorkspace: () => setTab('dossiers'),
+          }) : null,
           tab === 'notes' ? h(NotesView, { key: 'notes' }) : null,
         ]),
       ])
     }
 
-    function PromptsView() {
+    function PromptsView({ symbol, name, qty, avgCost, onGoWorkspace }) {
       const [stages, setStages] = useState([])
       const [hint, setHint] = useState('')
       const [error, setError] = useState('')
@@ -1140,10 +1496,14 @@ window.__ModuleLoader__.load({
           .catch((err) => setError(err.message || String(err)))
       }, [])
 
+      function filled(text) {
+        return fillPromptTemplate(text, { symbol, name, qty, avgCost })
+      }
+
       function copy(id, text) {
         try {
           if (navigator.clipboard) {
-            navigator.clipboard.writeText(text)
+            navigator.clipboard.writeText(filled(text))
             setCopied(id)
             setTimeout(() => setCopied(''), 1500)
           }
@@ -1156,11 +1516,26 @@ window.__ModuleLoader__.load({
 
       return h('div', null, [
         h('div', { key: 'intro', style: { ...css.card, marginBottom: 12 } }, [
-          h('div', { key: 't', style: { fontSize: 13, fontWeight: 600, marginBottom: 6 } }, '每个阶段怎么往下走'),
+          h('div', {
+            key: 'top',
+            style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 6 },
+          }, [
+            h('div', { key: 't', style: { fontSize: 14, fontWeight: 650 } }, '每个阶段怎么往下走'),
+            symbol
+              ? h('span', { key: 'sym', style: css.chip('good') }, '已填入 ' + symbol)
+              : h('button', {
+                key: 'pick',
+                type: 'button',
+                style: css.btn,
+                onClick: () => onGoWorkspace && onGoWorkspace(),
+              }, '去工作台选档案'),
+          ]),
           h('div', { key: 'd', style: { ...css.muted, lineHeight: 1.6 } },
-            '按当前阶段挑一句，把代码换成你的股票再发出去。' + (hint ? ' ' + hint : '')),
+            symbol
+              ? ('复制时会自动把 {{symbol}} 换成 ' + symbol + '。')
+              : ('尚未选中档案，复制仍带占位符。' + (hint ? ' ' + hint : ''))),
           h('div', { key: 'n', style: { ...css.muted, marginTop: 6 } },
-            '规则：数据没通过 stock_data check 之前不要写 verdict；没有宪法不要建仓；每次动作都要留流水。'),
+            '规则：stock_data check 通过前不写 verdict；没有宪法不建仓；先 stock_next 再动手。'),
         ]),
         stages.map((s) => h('section', { key: s.stage, style: { ...css.card, marginBottom: 10 } }, [
           h('div', {
@@ -1178,7 +1553,7 @@ window.__ModuleLoader__.load({
               key: 'pt',
               style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 4 },
             }, [
-              h('span', { key: 'x', style: { fontSize: 12, fontWeight: 600 } }, p.title),
+              h('span', { key: 'x', style: { fontSize: 13, fontWeight: 600 } }, p.title),
               h('button', {
                 key: 'c',
                 type: 'button',
@@ -1186,7 +1561,10 @@ window.__ModuleLoader__.load({
                 onClick: () => copy(s.stage + i, p.text),
               }, copied === s.stage + i ? '已复制' : '复制'),
             ]),
-            h('div', { key: 'tx', style: { fontSize: 12, lineHeight: 1.65, whiteSpace: 'pre-wrap' } }, p.text),
+            h('div', {
+              key: 'tx',
+              style: { fontSize: 13, lineHeight: 1.65, whiteSpace: 'pre-wrap' },
+            }, filled(p.text)),
           ])),
         ])),
       ])
@@ -1226,26 +1604,26 @@ window.__ModuleLoader__.load({
           zh: {
             panel: '投资账本',
             title: '投资决策账本',
-            subtitle: '先有规则，再有动作；每笔留痕',
+            subtitle: '先看状态，再动手；规则写在交易之前',
             refresh: '刷新',
-            tabDossiers: '档案',
+            tabDossiers: '工作台',
             tabPlaybooks: '手册',
             tabPrompts: '提示词',
             tabJournal: '流水',
             tabNotes: '财报笔记',
-            newDossier: '新建档案',
+            newDossier: '开始调研',
           },
           en: {
             panel: 'Ledger',
             title: 'Investment decision ledger',
-            subtitle: 'Rules before trades; one record per action',
+            subtitle: 'Status first; rules before trades',
             refresh: 'Refresh',
-            tabDossiers: 'Dossiers',
+            tabDossiers: 'Workspace',
             tabPlaybooks: 'Playbooks',
             tabPrompts: 'Prompts',
             tabJournal: 'Journal',
             tabNotes: 'Fin. notes',
-            newDossier: 'New dossier',
+            newDossier: 'Start research',
           },
         }), 'stock-os: dictionaries')
 

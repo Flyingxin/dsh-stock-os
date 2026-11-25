@@ -18,6 +18,12 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registerApi } from './lib/api.js'
 import { checkDataset, readDataset, writeDataset, SERIES_LABEL } from './lib/dataset.js'
+import {
+  buildNext,
+  buildStatus,
+  summariseStatusRow,
+  STAGE_LABEL,
+} from './lib/guidance.js'
 import { emit as emitNotes, loadIndex, parts as noteParts, search as searchNotes } from './lib/notes.js'
 import { buildChartsHtml } from './lib/charts.js'
 import { buildReportHtml, computeChecks } from './lib/report.js'
@@ -238,27 +244,50 @@ function applyTrade(dossier, action, args) {
   return p
 }
 
-function nextActions(dossier) {
-  const out = []
-  switch (dossier.stage) {
-    case 'idea':
-      out.push('写买前调研（playbook stage=research）：行业/商业模式/护城河/财务底稿/估值/内部人行为', '调研后 action=verdict 落结论，再 stage=research')
-      break
-    case 'research':
-      out.push('把结论翻成规则（playbook stage=plan）：仓位上限、分批、止损止盈、回撤预案', '写好宪法后 stage=plan')
-      break
-    case 'plan':
-      out.push('等信号，按宪法第一笔建仓（action=trade trade=open）', '建仓后 stage=hold 自动完成')
-      break
-    case 'open':
-    case 'hold':
-      out.push('按 reviewCadenceDays 设置盘后检查；触发止损/止盈/失效条件时先写理由再动手', '每次加减仓都要 trade 记录，理由写未来可验证的那一句')
-      break
-    case 'closed':
-      out.push('写复盘（playbook stage=review）：按当时的信息重放一遍，哪些是可预见的、哪些是运气', '复盘结论回写到 constitution 或 invalidations 里')
-      break
+/** Scan journal for a review entry tied to this symbol. */
+async function hasReviewInJournal(dir, symbol) {
+  const file = journalPath(dir)
+  let text = ''
+  try {
+    text = await fs.readFile(file, 'utf8')
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return false
+    throw error
   }
-  return out
+  const want = String(symbol).toUpperCase()
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue
+    try {
+      const row = JSON.parse(line)
+      if (String(row.symbol || '').toUpperCase() !== want) continue
+      if (row.action === 'review' || row.kind === 'review') return true
+    } catch {
+      // skip broken lines
+    }
+  }
+  return false
+}
+
+async function datasetReportFor(dir, symbol) {
+  const dataset = await readDataset(dir, symbol)
+  return dataset ? checkDataset(dataset) : null
+}
+
+/** Shared by stock_status / stock_next tools and /api/status|/api/next. */
+export async function resolveGuidance(dir, symbol, { price, mode = 'next' } = {}) {
+  const dossier = await loadDossier(dir, normalizeSymbol(symbol))
+  const report = await datasetReportFor(dir, dossier.symbol)
+  const hasReview = await hasReviewInJournal(dir, dossier.symbol)
+  const opts = { hasReview, price: price == null || price === '' ? undefined : Number(price) }
+  if (mode === 'status') {
+    return {
+      ok: true,
+      ...buildStatus(dossier, report, opts),
+      dossier: summarise(dossier),
+    }
+  }
+  const bundle = buildNext(dossier, report, opts)
+  return { ok: true, ...bundle, dossier: summarise(dossier) }
 }
 
 async function handle(action, args, dir, meta = {}) {
@@ -294,13 +323,18 @@ async function handle(action, args, dir, meta = {}) {
         stampSession(dossier, meta)
         await writeJson(dossierPath(dir, dossier.symbol), dossier)
       }
+      const report = await datasetReportFor(dir, dossier.symbol)
+      const hasReview = await hasReviewInJournal(dir, dossier.symbol)
+      const guidance = buildNext(dossier, report, { hasReview })
       return {
         ok: true,
         dossier: summarise(dossier),
         verdict: dossier.verdict,
         constitution: dossier.constitution,
         plans: dossier.plans,
-        nextActions: nextActions(dossier),
+        nextActions: guidance.nextActions,
+        guidance: guidance.guidance,
+        stageLabel: STAGE_LABEL[dossier.stage] || dossier.stage,
       }
     }
     case 'list': {
@@ -386,7 +420,17 @@ async function handle(action, args, dir, meta = {}) {
       dossier.updatedAt = now()
       await saveDossier(dir, dossier, meta)
       await appendJournal(dir, { ts: now(), symbol: dossier.symbol, action: 'stage', from, to, reason: args.reason || '' })
-      return { ok: true, from, to, dossier: summarise(dossier), nextActions: nextActions(dossier) }
+      const report = await datasetReportFor(dir, dossier.symbol)
+      const hasReview = await hasReviewInJournal(dir, dossier.symbol)
+      const guidance = buildNext(dossier, report, { hasReview })
+      return {
+        ok: true,
+        from,
+        to,
+        dossier: summarise(dossier),
+        nextActions: guidance.nextActions,
+        guidance: guidance.guidance,
+      }
     }
     case 'trade': {
       const symbol = normalizeSymbol(args.symbol)
@@ -642,11 +686,13 @@ async function handleReport(dir, args) {
     throw new Error(`数据不完整，先补齐再出报告：${datasetReport.problems.join('；')}（查缺用 stock_data action=check）`)
   }
   const checks = computeChecks(dataset)
+  const hasReview = await hasReviewInJournal(dir, symbol)
+  const guidance = buildNext(dossier, datasetReport, { hasReview })
   const html = buildReportHtml({
     dossier,
     dataset,
     checks,
-    nextActions: nextActions(dossier),
+    nextActions: guidance.nextActions,
   })
   if (args.action === 'preview') {
     const failed = checks.filter(c => c.state === 'bad').length
@@ -856,17 +902,172 @@ function registerResearchTools(ctx, dir) {
   })
 }
 
+function renderGuidanceStatus(value) {
+  const lines = []
+  if (value.message) lines.push(value.message)
+  if (value.rows) {
+    if (!value.rows.length) lines.push('还没有档案。用 stock_os action=init 建立第一份。')
+    for (const r of value.rows) {
+      const flags = [
+        r.dataset ? '数据✓' : '数据✗',
+        r.verdict || '未出结论',
+        r.reviewOverdue ? '复盘逾期' : null,
+        r.holding ? `${r.qty} 股` : '空仓',
+      ].filter(Boolean)
+      lines.push(`${r.symbol} ${r.name || ''} · ${r.stageLabel || r.stage} · ${flags.join(' · ')}`)
+    }
+    if (value.dir) lines.push(`档案目录：${value.dir}`)
+    return [{ type: 'text', text: lines.join('\n') }]
+  }
+  lines.push(
+    `${value.symbol}${value.name ? ' ' + value.name : ''} · ${value.stageLabel || value.stage}`,
+  )
+  const ready = value.readiness || {}
+  lines.push(
+    `就绪：数据${ready.dataset ? '✓' : '✗'} 结论${ready.verdict ? '✓(' + ready.verdictStatus + ')' : '✗'} `
+    + `宪法${ready.constitution ? '✓' : '✗'} 回撤${ready.drawdownPlan ? '✓' : '✗'}`
+    + (ready.reviewOverdue ? ' 复盘逾期!' : ''),
+  )
+  for (const b of value.blockers || []) lines.push('  ! ' + b.message)
+  if (value.next && value.next.title) {
+    lines.push(`下一步：${value.next.title}`)
+    if (value.next.why) lines.push(`  ${value.next.why}`)
+  }
+  return [{ type: 'text', text: lines.join('\n') }]
+}
+
+function renderGuidanceNext(value) {
+  const lines = []
+  const n = value.next || {}
+  lines.push(`${value.symbol}${value.name ? ' ' + value.name : ''} · ${value.stageLabel || value.stage}`)
+  lines.push(`▶ ${n.title || '—'}`)
+  if (n.why) lines.push(n.why)
+  if (n.playbook) lines.push(`手册：stock_playbook stage=${n.playbook}`)
+  if (n.suggestedCalls && n.suggestedCalls.length) {
+    lines.push('建议调用：')
+    for (const c of n.suggestedCalls) {
+      const args = Object.entries(c.args || {})
+        .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`)
+        .join(' ')
+      lines.push(`  · ${c.tool} ${args}`)
+    }
+  }
+  for (const b of value.blockers || []) lines.push('  ! ' + b.message)
+  if (value.guardsHint) lines.push(value.guardsHint)
+  if (n.chatPrompt) lines.push(`对话提示：${n.chatPrompt}`)
+  return [{ type: 'text', text: lines.join('\n') }]
+}
+
+function registerOrchestrationTools(ctx, dir) {
+  ctx.tools.register({
+    name: 'stock_status',
+    description:
+      '投资账本导航（只读）：看一只股票现在在哪一阶段、数据/结论/宪法是否就绪、有哪些硬拦。'
+      + ' 不传 symbol 则列出全部档案摘要。涉及个股时优先先调这个（或已知代码时调 stock_next）。',
+    parameters: {
+      symbol: { type: 'string', description: '股票代码；省略则列出全部档案的阶段与就绪摘要' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: true,
+        required: ['ok'],
+        properties: {
+          ok: { type: 'boolean' },
+          message: { type: 'string' },
+          rows: { type: 'array', items: { type: 'object', additionalProperties: true } },
+          stage: { type: 'string' },
+          stageLabel: { type: 'string' },
+          readiness: { type: 'object', additionalProperties: true },
+          blockers: { type: 'array', items: { type: 'object', additionalProperties: true } },
+          next: { type: 'object', additionalProperties: true },
+        },
+      },
+      render: (_a, v) => renderGuidanceStatus(v),
+    },
+    async execute(args) {
+      if (!args.symbol) {
+        let files = []
+        try {
+          files = (await fs.readdir(dir)).filter(f => f.endsWith('.json'))
+        } catch (error) {
+          if (!error || error.code !== 'ENOENT') throw error
+        }
+        const rows = []
+        for (const f of files) {
+          const d = await readJson(path.join(dir, f), undefined)
+          if (!d || !d.symbol) continue
+          const report = await datasetReportFor(dir, d.symbol)
+          rows.push(summariseStatusRow(d, report))
+        }
+        rows.sort((a, b) => String(a.updatedAt || '').localeCompare(String(b.updatedAt || '')))
+        return jsonSafe({
+          ok: true,
+          dir,
+          count: rows.length,
+          rows,
+          message: rows.length
+            ? `共 ${rows.length} 份档案。下一步用 stock_next symbol=代码 看该做什么。`
+            : '还没有档案。用 stock_os action=init 建立第一份。',
+        })
+      }
+      const bundle = await resolveGuidance(dir, args.symbol, { mode: 'next' })
+      return jsonSafe(bundle)
+    },
+  })
+
+  ctx.tools.register({
+    name: 'stock_next',
+    description:
+      '投资账本导航（只读）：给定股票代码，返回唯一主路径——该读哪本手册、建议调用哪些工具、面板可塞进对话的 chatPrompt。'
+      + ' 写操作仍用 stock_os / stock_data 等；本工具不改档案。',
+    parameters: {
+      symbol: { type: 'string', required: true, description: '股票代码' },
+      price: { type: 'number', description: '可选现价；持有期会附上先跑 guards 的提示' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: true,
+        required: ['ok'],
+        properties: {
+          ok: { type: 'boolean' },
+          stage: { type: 'string' },
+          stageLabel: { type: 'string' },
+          next: { type: 'object', additionalProperties: true },
+          blockers: { type: 'array', items: { type: 'object', additionalProperties: true } },
+          nextActions: { type: 'array', items: { type: 'string' } },
+          chatPrompt: { type: 'string' },
+        },
+      },
+      render: (_a, v) => renderGuidanceNext(v),
+    },
+    async execute(args) {
+      const bundle = await resolveGuidance(dir, args.symbol, {
+        mode: 'next',
+        price: args.price,
+      })
+      if (bundle.next && bundle.next.chatPrompt) {
+        bundle.chatPrompt = bundle.next.chatPrompt
+      }
+      return jsonSafe(bundle)
+    },
+  })
+}
+
 export function apply(ctx, config = {}) {
   const dir = dataDir(config)
 
   registerApi(ctx, {
     dir,
     handle,
+    resolveGuidance,
     playbooksDir: path.join(HERE, 'playbooks'),
     labDir: path.join(HERE, 'lab'),
     reportsDir: reportsDir(dir),
   })
 
+  registerOrchestrationTools(ctx, dir)
   registerResearchTools(ctx, dir)
 
   ctx.tools.register({
@@ -976,10 +1177,11 @@ export function apply(ctx, config = {}) {
     ctx.systemPrompt && ctx.systemPrompt.section({
       name: 'tool:stock-os',
       order: 900,
-      text: '涉及个股买卖、持仓管理、交易记录时：先用 stock_playbook 读对应阶段手册，再用 stock_os 读写档案。'
-        + ' 买前调研的顺序是硬性的：stock_data 写入并检查近五年财报数据 → stock_notes 检索依据 → stock_charts 出图（可选）→ stock_os verdict 写结论 → stock_report 出结论报告。'
-        + ' stock_report 只在有 verdict 时可用；报告里"无法判断"的检查项就写无法判断，不要用行业均值或上年数据补。'
-        + ' 本工具不预测涨跌；任何"该买了/该卖了"的判断都要落到规则条文与记录上。',
+      text: '涉及个股买卖、持仓管理、交易记录时：先 stock_status（或已知代码则 stock_next）看阶段与就绪度，'
+        + '再按返回的 playbook / suggestedCalls 执行；写操作仍用 stock_os / stock_data / stock_notes / stock_charts / stock_report。'
+        + ' 买前调研硬顺序：stock_data check 通过 → stock_notes → stock_charts（可选）→ stock_os verdict → stock_report。'
+        + ' stock_report 只在有 verdict 时可用；"无法判断"就写无法判断，不要用行业均值或上年外推。'
+        + ' 本工具不预测涨跌；任何买卖判断都要落到规则条文与流水上。',
     })
   } catch {
     // A profile without the system-prompt service still gets both tools.
